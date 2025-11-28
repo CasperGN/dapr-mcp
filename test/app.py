@@ -34,7 +34,7 @@ def main() -> None:
     asyncio.set_event_loop(asyncio.new_event_loop())
 
     agent = DurableAgent(
-        name="Stevie",
+        name="Steve",
         role="Dapr Client",
         goal="Help humans interact with Dapr through your MCP tool.",
         instructions=[
