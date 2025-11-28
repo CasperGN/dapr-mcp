@@ -35,3 +35,24 @@ curl -i -X POST http://localhost:8001/run -H "Content-Type: application/json" -d
 ```
 
 > NB: Currently the instructions and details could use improvements. Same can be said for Steve's instructions. This is purely for demo purpose.
+
+## Add to vscode
+
+Run
+
+```shell
+dapr run --app-id daprmcp --resources-path components -- go run cmd/daprmcp/main.go --http localhost:8080
+```
+
+Add the following file as `.vscode/mcp.json`
+
+```json
+{
+  "servers": {
+    "dapr-mcp": {
+      "type": "http",
+      "url": "http://localhost:8080"
+    }
+  }
+}
+```
