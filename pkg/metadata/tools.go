@@ -120,7 +120,7 @@ func GetDynamicInstructions(ctx context.Context, client dapr.Client) string {
 	if len(secretStores) > 0 {
 		body.WriteString("## Available Secret Stores (for tools like `get_secret`, `get_bulk_secrets`):\n")
 		body.WriteString(fmt.Sprintf("- **Names**: %s\n", strings.Join(secretStores, ", ")))
-		body.WriteString("   - **SECURITY RULE**: Only use `get_secret` for whitelisted, non-critical secrets. **AVOID `get_bulk_secrets`** unless the user explicitly requests an enumeration of all accessible secrets, as this operation is heavily restricted and carries high risk.\n\n")
+		body.WriteString("   - **SECURITY RULE**: Only use `get_secret` for allowlisted, non-critical secrets. **AVOID `get_bulk_secrets`** unless the user explicitly requests an enumeration of all accessible secrets, as this operation is heavily restricted and carries high risk.\n\n")
 	}
 
 	if len(locks) > 0 {
