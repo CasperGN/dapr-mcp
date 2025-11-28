@@ -60,10 +60,36 @@ func main() {
 		log.Fatalf("Fatal Error: Could not initialize Dapr Client for tools: %v", err)
 	}
 
-	instructions := metadata.GetDynamicInstructions(ctx, DaprClient)
+	var instructions strings.Builder
+	instructions.WriteString("You are an expert AI assistant for Dapr microservices. Your role is to translate user requests into precise, deterministic, and safe Dapr MCP tool calls.\n\n")
+
+	instructions.WriteString("### Global Safety Rules\n")
+	instructions.WriteString("- **Clarity Before Acting**: If ANY required argument is missing (store name, key, topic, etc.), you **MUST ask the user for clarification before calling a tool**.\n")
+	instructions.WriteString("- **Serialization**: Metadata fields MUST be a dictionary/map (e.g., `{}`) and NEVER a quoted string (e.g., `\"{}\"`).\n")
+	instructions.WriteString("- **Multi-Step Workflow**: When multiple operations are requested, execute them sequentially — **one tool call at a time**.\n")
+	instructions.WriteString("- **Forbidden Actions**: NEVER invent component names, keys, topics, or cryptographic parameters.\n\n")
+	instructions.WriteString("### Tool Call Validity\n")
+	instructions.WriteString("Consult the tool's Description for specific component rules (e.g., key formatting, security warnings).\n")
+
+	opts := &mcp.ServerOptions{
+		Instructions:      instructions.String(),
+		CompletionHandler: complete,
+		HasTools:          true,
+	}
+	log.Printf("Instructions sent to client:\n%s", instructions.String())
+
+	server := mcp.NewServer(&mcp.Implementation{Name: "daprmcp", Version: "v1.0.0"}, opts)
+
+	metadata.RegisterTools(server, DaprClient)
+	invoke.RegisterTools(server, DaprClient)
+	actor.RegisterTools(server, DaprClient)
 
 	componentPresence := make(map[string]bool)
-	for _, comp := range metadata.ComponentCache {
+	components, err := metadata.GetLiveComponentList(ctx, DaprClient)
+	if err != nil {
+		log.Fatalf("Fatal Error: Could not get Components: %v", err)
+	}
+	for _, comp := range components {
 		if strings.HasPrefix(comp.Type, "state.") {
 			componentPresence["state"] = true
 		} else if strings.HasPrefix(comp.Type, "pubsub.") {
@@ -80,17 +106,6 @@ func main() {
 			componentPresence["cryptography"] = true
 		}
 	}
-
-	opts := &mcp.ServerOptions{
-		Instructions:      instructions,
-		CompletionHandler: complete,
-	}
-
-	server := mcp.NewServer(&mcp.Implementation{Name: "daprmcp", Version: "v1.0.0"}, opts)
-
-	metadata.RegisterTools(server, DaprClient)
-	invoke.RegisterTools(server, DaprClient)
-	actor.RegisterTools(server, DaprClient)
 
 	if componentPresence["pubsub"] {
 		pubsub.RegisterTools(server, DaprClient)

@@ -21,10 +21,10 @@ func publishEventTool(ctx context.Context, req *mcp.CallToolRequest, args Publis
 	client, err := dapr.NewClient()
 	if err != nil {
 		log.Printf("Failed to create Dapr client: %v", err)
+		toolErrorMessage := fmt.Sprintf("failed to publish event to topic '%s' on pubsub '%s'. Dapr Error: %v", args.Topic, args.PubsubName, err)
 		return &mcp.CallToolResult{
-			Content: []mcp.Content{&mcp.TextContent{
-				Text: fmt.Sprintf("Error: Could not connect to Dapr sidecar. Ensure Dapr is running. Details: %v", err),
-			}},
+			Content: []mcp.Content{&mcp.TextContent{Text: toolErrorMessage}},
+			IsError: true,
 		}, nil, nil
 	}
 	defer client.Close()
@@ -71,10 +71,10 @@ func publishEventWithMetadataTool(ctx context.Context, req *mcp.CallToolRequest,
 
 	if err := daprClient.PublishEvent(ctx, args.PubsubName, args.Topic, data, opts...); err != nil {
 		log.Printf("Dapr PublishEventWithMetadata failed: %v", err)
+		toolErrorMessage := fmt.Sprintf("failed to publish event to topic '%s' on pubsub '%s' with metadata. Dapr Error: %v", args.Topic, args.PubsubName, err)
 		return &mcp.CallToolResult{
-			Content: []mcp.Content{&mcp.TextContent{
-				Text: fmt.Sprintf("Failed to publish event to topic '%s' on pubsub '%s' with metadata. Dapr Error: %v", args.Topic, args.PubsubName, err),
-			}},
+			Content: []mcp.Content{&mcp.TextContent{Text: toolErrorMessage}},
+			IsError: true,
 		}, nil, nil
 	}
 
@@ -95,14 +95,39 @@ func publishEventWithMetadataTool(ctx context.Context, req *mcp.CallToolRequest,
 
 func RegisterTools(server *mcp.Server, client dapr.Client) {
 	daprClient = client
+
+	notDestructive := false
+	notIdempotent := false
+	isOpenWorld := true
+
 	mcp.AddTool(server, &mcp.Tool{
-		Name:        "publish_event",
-		Title:       "Publish Event (Simple)",
-		Description: "Publishes a message to a topic using the Dapr Pub/Sub building block. **This is a SIDE-EFFECT action that triggers decoupled, asynchronous workflows across the system.** Use only to broadcast critical events (e.g., 'new order received', 'status changed'). Arguments: pubsubName, topic, message.",
+		Name:  "publish_event",
+		Title: "Publish Event (Simple)",
+		Description: "Publishes a message to a topic using the Dapr Pub/Sub building block. **This is a SIDE-EFFECT action that triggers decoupled, asynchronous workflows.** Publishing is additive (non-destructive) but NOT IDEMPOTENT (sending twice results in two messages).\n\n" +
+			"**ARGUMENT RULES:**\n" +
+			"1. **REQUIRED INPUTS**: You MUST provide non-empty values for `PubsubName`, `Topic`, and `Message`.\n" +
+			"2. **NEVER INVENT**: You must NOT invent `PubsubName` or `Topic` names.\n" +
+			"3. **MESSAGE RULE**: The `Message` MUST be the content the user wishes to publish and should reflect user intent.\n" +
+			"4. **CLARIFICATION**: If any required input is missing, you MUST ask the user for clarification.",
+		Annotations: &mcp.ToolAnnotations{
+			ReadOnlyHint:    false,
+			DestructiveHint: &notDestructive,
+			IdempotentHint:  notIdempotent,
+			OpenWorldHint:   &isOpenWorld,
+		},
 	}, publishEventTool)
 	mcp.AddTool(server, &mcp.Tool{
-		Name:        "publish_event_with_metadata",
-		Title:       "Publish Event (With Metadata)",
-		Description: "Publishes a message to a topic including optional metadata/headers (e.g., routing headers, 'ttlInSeconds' for Message Time-to-Live). **This is a SIDE-EFFECT action.** Use this tool when you need granular control over message delivery or routing. Arguments: pubsubName, topic, message, metadata.",
+		Name:  "publish_event_with_metadata",
+		Title: "Publish Event (With Metadata)",
+		Description: "Publishes a message to a topic including optional metadata/headers (e.g., routing headers, 'ttlInSeconds'). **This is a SIDE-EFFECT action.** Use this tool when you need granular control over message delivery or routing.\n\n" +
+			"**ARGUMENT RULES:**\n" +
+			"1. **REQUIRED INPUTS**: You MUST provide non-empty values for `PubsubName`, `Topic`, and `Message`.\n" +
+			"2. **METADATA RULE**: The `Metadata` field MUST be a dictionary/map containing valid key-value pairs for the pubsub component (e.g., message time-to-live).",
+		Annotations: &mcp.ToolAnnotations{
+			ReadOnlyHint:    false,
+			DestructiveHint: &notDestructive,
+			IdempotentHint:  notIdempotent,
+			OpenWorldHint:   &isOpenWorld,
+		},
 	}, publishEventWithMetadataTool)
 }

@@ -36,16 +36,28 @@ func converseTool(ctx context.Context, req *mcp.CallToolRequest, args dapr.Conve
 	resp, err := daprClient.ConverseAlpha2(ctx, converseReq)
 	if err != nil {
 		log.Printf("Dapr Converse failed: %v", err)
-		return nil, nil, fmt.Errorf("dapr API error while conversing with LLM '%s': %w", args.Name, err)
+		toolErrorMessage := fmt.Errorf("dapr API error while conversing with LLM '%s': %w", args.Name, err).Error()
+		return &mcp.CallToolResult{
+			Content: []mcp.Content{&mcp.TextContent{Text: toolErrorMessage}},
+			IsError: true,
+		}, nil, nil
 	}
 
 	if len(resp.Outputs) == 0 {
-		return nil, nil, fmt.Errorf("LLM '%s' returned an empty outputs list", args.Name)
+		toolErrorMessage := fmt.Sprintf("LLM '%s' returned an empty outputs list", args.Name)
+		return &mcp.CallToolResult{
+			Content: []mcp.Content{&mcp.TextContent{Text: toolErrorMessage}},
+			IsError: true,
+		}, nil, nil
 	}
 	lastOutput := resp.Outputs[len(resp.Outputs)-1]
 
 	if len(lastOutput.Choices) == 0 {
-		return nil, nil, fmt.Errorf("LLM '%s' returned no choices in the last output", args.Name)
+		toolErrorMessage := fmt.Sprintf("LLM '%s' returned no choices in the last output", args.Name)
+		return &mcp.CallToolResult{
+			Content: []mcp.Content{&mcp.TextContent{Text: toolErrorMessage}},
+			IsError: true,
+		}, nil, nil
 	}
 
 	var result strings.Builder
@@ -93,9 +105,25 @@ func converseTool(ctx context.Context, req *mcp.CallToolRequest, args dapr.Conve
 
 func RegisterTools(server *mcp.Server, client dapr.Client) {
 	daprClient = client
+
+	isDestructive := false
+	isReadOnly := true
+	isIdempotent := true
+	isOpenWorld := true
+
 	mcp.AddTool(server, &mcp.Tool{
-		Name:        "converse_with_llm",
-		Title:       "Delegate Task to External Reasoning Engine",
-		Description: "Delegates a complex reasoning, summarization, or text generation task to a secondary Large Language Model (LLM) configured via a Dapr conversation component (e.g., OpenAI, Mistral). **This tool is Computational and Stateless (no side effect).** Use this only when the primary agent needs to outsource a specialized task, like: generating code, performing a creative writing exercise, or utilizing a model with a different capability set. Requires the Dapr component 'Name' and the list of 'Inputs' (messages).",
+		Name:  "converse_with_llm",
+		Title: "Delegate Task to External Reasoning Engine",
+		Description: "Delegates a complex reasoning, summarization, or text generation task to a secondary Large Language Model (LLM) configured via a Dapr conversation component (e.g., OpenAI, Mistral). **This tool is Computational and Stateless (Read-Only).** Use this tool only when the primary agent needs to outsource a specialized task (e.g., generating code, complex reasoning, or creative writing).\n\n" +
+			"**ARGUMENT RULES:**\n" +
+			"1. **REQUIRED INPUTS**: You MUST provide the Dapr component `Name` and the full conversation history in the `Inputs` argument.\n" +
+			"2. **NEVER INVENT**: You must NOT invent the component `Name`; it must be provided by the user or discovered via the `get_components` tool.\n" +
+			"3. **HISTORY**: The `Inputs` argument MUST contain the full, current conversation history to maintain context during the delegation.",
+		Annotations: &mcp.ToolAnnotations{
+			DestructiveHint: &isDestructive,
+			ReadOnlyHint:    isReadOnly,
+			IdempotentHint:  isIdempotent,
+			OpenWorldHint:   &isOpenWorld,
+		},
 	}, converseTool)
 }

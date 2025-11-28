@@ -38,7 +38,11 @@ func acquireLockTool(ctx context.Context, req *mcp.CallToolRequest, args Acquire
 	resp, err := daprClient.TryLockAlpha1(rpcCtx, args.StoreName, lockReq)
 	if err != nil {
 		log.Printf("Dapr TryLockAlpha1 failed: %v", err)
-		return nil, nil, fmt.Errorf("dapr API error while trying to acquire lock: %w", err)
+		toolErrorMessage := fmt.Errorf("dapr API error while trying to acquire lock: %w", err).Error()
+		return &mcp.CallToolResult{
+			Content: []mcp.Content{&mcp.TextContent{Text: toolErrorMessage}},
+			IsError: true,
+		}, nil, nil
 	}
 
 	var successMessage string
@@ -72,7 +76,11 @@ func releaseLockTool(ctx context.Context, req *mcp.CallToolRequest, args Release
 	resp, err := daprClient.UnlockAlpha1(ctx, args.StoreName, unlockReq)
 	if err != nil {
 		log.Printf("Dapr UnlockAlpha1 failed: %v", err)
-		return nil, nil, fmt.Errorf("dapr API error while trying to release lock: %w", err)
+		toolErrorMessage := fmt.Errorf("dapr API error while trying to release lock: %w", err).Error()
+		return &mcp.CallToolResult{
+			Content: []mcp.Content{&mcp.TextContent{Text: toolErrorMessage}},
+			IsError: true,
+		}, nil, nil
 	}
 
 	var statusMessage string
@@ -113,14 +121,42 @@ func releaseLockTool(ctx context.Context, req *mcp.CallToolRequest, args Release
 
 func RegisterTools(server *mcp.Server, client dapr.Client) {
 	daprClient = client
+
+	notDestructive := false
+	acquireIsIdempotent := true
+	releaseIsIdempotent := false
+	isOpenWorld := true
+
 	mcp.AddTool(server, &mcp.Tool{
-		Name:        "acquire_lock",
-		Title:       "Acquire Resource Coordination Lock",
-		Description: "Tries to acquire a distributed lock on a named resource for exclusive access. **This is a SIDE-EFFECT action used for critical coordination and concurrency control.** Use only when the agent must ensure no other entity is concurrently modifying a shared resource (e.g., before writing to a database). Requires the store name, unique resource ID, owner ID, and a short expiry time in seconds.",
+		Name:  "acquire_lock",
+		Title: "Acquire Resource Coordination Lock",
+		Description: "Tries to acquire a distributed lock on a named resource for exclusive access. **This is a SIDE-EFFECT action that IS IDEMPOTENT.** Use only when the agent must ensure no other entity is concurrently modifying a shared resource (e.g., before writing to a database).\n\n" +
+			"**ARGUMENT RULES:**\n" +
+			"1. **REQUIRED INPUTS**: You MUST provide non-empty values for `storeName`, `resourceID`, `lockOwner`, and `expiryInSeconds`.\n" +
+			"2. **NEVER INVENT**: You must NOT invent lock owners or resource IDs.\n" +
+			"3. **CLARIFICATION**: If any required input is missing, you MUST ask the user for clarification.\n\n" +
+			"**SECURITY WARNING**: Misuse can cause system-wide deadlocks or race conditions. Ensure the lock is released promptly.",
+		Annotations: &mcp.ToolAnnotations{
+			ReadOnlyHint:    false,
+			DestructiveHint: &notDestructive,
+			IdempotentHint:  acquireIsIdempotent,
+			OpenWorldHint:   &isOpenWorld,
+		},
 	}, acquireLockTool)
 	mcp.AddTool(server, &mcp.Tool{
-		Name:        "release_lock",
-		Title:       "Release Resource Coordination Lock",
-		Description: "Releases a previously acquired distributed lock on a resource. **This is a SIDE-EFFECT action.** It MUST be called immediately after the critical section of code is complete to prevent deadlocks. Only the original owner can release the lock. Requires the store name, resource ID, and lock owner ID.",
+		Name:  "release_lock",
+		Title: "Release Resource Coordination Lock",
+		Description: "Releases a previously acquired distributed lock on a resource. **This is a SIDE-EFFECT action that is NOT IDEMPOTENT.** It MUST be called immediately after the critical section of code is complete to prevent deadlocks.\n\n" +
+			"**ARGUMENT RULES:**\n" +
+			"1. **REQUIRED INPUTS**: You MUST provide `storeName`, `resourceID`, and the correct `lockOwner`.\n" +
+			"2. **OWNERSHIP**: Only the entity that acquired the lock can release it.\n" +
+			"3. **CLARIFICATION**: If any required input is missing, you MUST ask the user for clarification.\n\n" +
+			"**WORKFLOW RULE**: This tool must be used as the final step in a critical concurrency workflow.",
+		Annotations: &mcp.ToolAnnotations{
+			ReadOnlyHint:    false,
+			DestructiveHint: &notDestructive,
+			IdempotentHint:  releaseIsIdempotent,
+			OpenWorldHint:   &isOpenWorld,
+		},
 	}, releaseLockTool)
 }

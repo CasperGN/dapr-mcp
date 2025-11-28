@@ -29,7 +29,11 @@ func invokeActorMethodTool(ctx context.Context, req *mcp.CallToolRequest, args I
 	resp, err := daprClient.InvokeActor(ctx, actorReq)
 	if err != nil {
 		log.Printf("Dapr InvokeActor failed: %v", err)
-		return nil, nil, fmt.Errorf("failed to invoke actor method: %w", err)
+		toolErrorMessage := fmt.Errorf("dapr InvokeActor failed: %w", err).Error()
+		return &mcp.CallToolResult{
+			Content: []mcp.Content{&mcp.TextContent{Text: toolErrorMessage}},
+			IsError: true,
+		}, nil, nil
 	}
 
 	resultData := string(resp.Data)
@@ -53,9 +57,27 @@ func invokeActorMethodTool(ctx context.Context, req *mcp.CallToolRequest, args I
 
 func RegisterTools(server *mcp.Server, client dapr.Client) {
 	daprClient = client
+
+	isDestructive := true
+	notReadOnly := false
+	notIdempotent := false
+	isOpenWorld := true
+
 	mcp.AddTool(server, &mcp.Tool{
-		Name:        "invoke_actor_method",
-		Title:       "Execute State-Altering Actor Method",
-		Description: "Executes a method on a Dapr Virtual Actor instance. **This is a stateful action that produces a SIDE EFFECT** (e.g., updating an order status, processing a payment, managing user state). Use this tool only when the requested action requires stateful, single-threaded execution. You must provide the Actor Type, the specific Actor ID, the exact Method name, and the necessary JSON payload in the 'Data' field.",
+		Name:  "invoke_actor_method",
+		Title: "Execute Stateful Actor Method",
+		Description: "Executes a method on a Dapr Virtual Actor instance, providing durability and concurrency control. **This is a SIDE-EFFECT action that alters state (e.g., creating an order, updating a payment status).** Use this tool exclusively for requests that require stateful, single-threaded execution.\n\n" +
+			"**ARGUMENT RULES:**\n" +
+			"1. **REQUIRED INPUTS**: You MUST provide non-empty values for `ActorType`, `ActorID`, `Method`, and `Data`.\n" +
+			"2. **NEVER INVENT**: You must NOT invent the `ActorType`, `ActorID`, or `Method` names; they must be provided by the user or discovered via another tool.\n" +
+			"3. **CLARIFICATION**: If any required input is missing, you MUST ask the user for clarification before generating the tool call.\n" +
+			"4. **DATA FORMAT**: The `Data` payload MUST be a single string (often JSON) representing the input parameters for the actor method.\n\n" +
+			"**SECURITY WARNING**: This tool is inherently transactional and can lead to irreversible state changes (e.g., resource deletion or order cancellation). Proceed with extreme caution and ensure user intent is clear.",
+		Annotations: &mcp.ToolAnnotations{
+			DestructiveHint: &isDestructive,
+			ReadOnlyHint:    notReadOnly,
+			IdempotentHint:  notIdempotent,
+			OpenWorldHint:   &isOpenWorld,
+		},
 	}, invokeActorMethodTool)
 }

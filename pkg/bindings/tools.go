@@ -37,10 +37,10 @@ func invokeOutputBindingTool(ctx context.Context, req *mcp.CallToolRequest, args
 	resp, err := daprClient.InvokeBinding(ctx, bindingReq)
 	if err != nil {
 		log.Printf("Dapr InvokeOutputBinding failed for binding %s: %v", args.BindingName, err)
+		toolErrorMessage := fmt.Sprintf("Failed to invoke binding '%s' with operation '%s'. Dapr Error: %v", args.BindingName, args.Operation, err)
 		return &mcp.CallToolResult{
-			Content: []mcp.Content{&mcp.TextContent{
-				Text: fmt.Sprintf("Failed to invoke binding '%s' with operation '%s'. Dapr Error: %v", args.BindingName, args.Operation, err),
-			}},
+			Content: []mcp.Content{&mcp.TextContent{Text: toolErrorMessage}},
+			IsError: true,
 		}, nil, nil
 	}
 
@@ -70,9 +70,27 @@ func invokeOutputBindingTool(ctx context.Context, req *mcp.CallToolRequest, args
 
 func RegisterTools(server *mcp.Server, client dapr.Client) {
 	daprClient = client
+
+	isDestructive := true
+	notReadOnly := false
+	notIdempotent := false
+	isOpenWorld := true
+
 	mcp.AddTool(server, &mcp.Tool{
-		Name:        "invoke_output_binding",
-		Title:       "Interact with External System via Binding",
-		Description: "Invokes an operation on a Dapr output binding component to interact with external systems (e.g., storage, message queues, external APIs). **Most operations (like 'create' or 'delete') have SIDE EFFECTS.** Use this tool when the goal is to perform an I/O action beyond simple context retrieval. Requires the binding name, the specific operation (e.g., 'create', 'get', 'delete'), data, and optional metadata.",
+		Name:  "invoke_output_binding",
+		Title: "Interact with External System via Binding",
+		Description: "Invokes an operation on a Dapr output binding component to interact with external systems (e.g., queues, databases, webhooks). **This is a SIDE-EFFECT action that can be DESTRUCTIVE.** Use this tool to perform I/O actions.\n\n" +
+			"**ARGUMENT RULES:**\n" +
+			"1. **REQUIRED INPUTS**: You MUST provide non-empty values for `BindingName`, `Operation`, and the `Data` payload.\n" +
+			"2. **NEVER INVENT**: You must NOT invent `BindingName` or `Operation` names; they must be provided by the user or discovered.\n" +
+			"3. **CLARIFICATION**: If any required input is missing, you MUST ask the user for clarification before generating the tool call.\n" +
+			"4. **METADATA**: The `Metadata` field MUST be used to pass headers or component-specific settings (e.g., overriding the target URL for an HTTP binding).\n\n" +
+			"**SECURITY WARNING**: This tool allows interaction with external resources, potentially causing irreversible changes (e.g., placing an order, deleting a resource). Ensure user intent is clear and the operation is authorized.",
+		Annotations: &mcp.ToolAnnotations{
+			DestructiveHint: &isDestructive,
+			ReadOnlyHint:    notReadOnly,
+			IdempotentHint:  notIdempotent,
+			OpenWorldHint:   &isOpenWorld,
+		},
 	}, invokeOutputBindingTool)
 }

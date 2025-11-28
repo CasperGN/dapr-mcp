@@ -34,7 +34,11 @@ func invokeServiceTool(ctx context.Context, req *mcp.CallToolRequest, args Invok
 	resp, err := daprClient.InvokeMethodWithContent(ctx, args.AppID, args.Method, args.HTTPVerb, content)
 	if err != nil {
 		log.Printf("Dapr InvokeMethod failed for app %s/%s: %v", args.AppID, args.Method, err)
-		return nil, nil, fmt.Errorf("failed to invoke service method: %w", err)
+		toolErrorMessage := fmt.Errorf("failed to invoke service method: %w", err).Error()
+		return &mcp.CallToolResult{
+			Content: []mcp.Content{&mcp.TextContent{Text: toolErrorMessage}},
+			IsError: true,
+		}, nil, nil
 	}
 
 	var resultData bytes.Buffer
@@ -71,9 +75,27 @@ func invokeServiceTool(ctx context.Context, req *mcp.CallToolRequest, args Invok
 
 func RegisterTools(server *mcp.Server, client dapr.Client) {
 	daprClient = client
+
+	isDestructive := true
+	notReadOnly := false
+	notIdempotent := false
+	isOpenWorld := true
+
 	mcp.AddTool(server, &mcp.Tool{
-		Name:        "invoke_service",
-		Title:       "Execute Inter-Service Request",
-		Description: "Calls a method (endpoint) on another Dapr-enabled service using its Dapr App ID. **This is a SIDE-EFFECT action.** Use this tool to perform transactional business logic, such as updating a database, creating a resource, or triggering a workflow in another microservice. Requires the target App ID, method/endpoint, HTTP verb, and request payload.",
+		Name:  "invoke_service",
+		Title: "Execute Inter-Service Request",
+		Description: "Calls a method (endpoint) on another Dapr-enabled service. **This is a SIDE-EFFECT action that can be DESTRUCTIVE and is NOT IDEMPOTENT for POST/PUT calls.** Use this tool to perform transactional business logic (e.g., updating data, creating resources, triggering workflows).\n\n" +
+			"**ARGUMENT RULES:**\n" +
+			"1. **REQUIRED INPUTS**: You MUST provide non-empty values for `AppID`, `Method`, and `HTTPVerb`.\n" +
+			"2. **NEVER INVENT**: You must NOT invent `AppID` or `Method` names; they must be provided by the user or discovered.\n" +
+			"3. **VERB USAGE**: Use 'GET' for read-only status checks, 'POST' for creation, and 'DELETE' for removal. The default is 'POST'.\n" +
+			"4. **CLARIFICATION**: If any required input is missing, you MUST ask the user for clarification.\n\n" +
+			"**SECURITY WARNING**: This tool bypasses the standard Resource/Tool abstraction and directly executes service logic. Ensure user intent is clear and the operation is authorized.",
+		Annotations: &mcp.ToolAnnotations{
+			DestructiveHint: &isDestructive,
+			ReadOnlyHint:    notReadOnly,
+			IdempotentHint:  notIdempotent,
+			OpenWorldHint:   &isOpenWorld,
+		},
 	}, invokeServiceTool)
 }

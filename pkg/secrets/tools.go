@@ -28,7 +28,11 @@ func getSecretTool(ctx context.Context, req *mcp.CallToolRequest, args GetSecret
 	secrets, err := daprClient.GetSecret(ctx, args.StoreName, args.SecretName, args.Metadata)
 	if err != nil {
 		log.Printf("Dapr GetSecret failed: %v", err)
-		return nil, nil, fmt.Errorf("failed to get secret '%s': %w", args.SecretName, err)
+		toolErrorMessage := fmt.Errorf("failed to get secret '%s': %w", args.SecretName, err).Error()
+		return &mcp.CallToolResult{
+			Content: []mcp.Content{&mcp.TextContent{Text: toolErrorMessage}},
+			IsError: true,
+		}, nil, nil
 	}
 
 	var secretKeys []string
@@ -56,7 +60,11 @@ func getBulkSecretTool(ctx context.Context, req *mcp.CallToolRequest, args GetBu
 	secretsBulk, err := daprClient.GetBulkSecret(ctx, args.StoreName, args.Metadata)
 	if err != nil {
 		log.Printf("Dapr GetBulkSecret failed: %v", err)
-		return nil, nil, fmt.Errorf("failed to get bulk secrets from store '%s': %w", args.StoreName, err)
+		toolErrorMessage := fmt.Errorf("failed to get bulk secrets from store '%s': %w", args.StoreName, err).Error()
+		return &mcp.CallToolResult{
+			Content: []mcp.Content{&mcp.TextContent{Text: toolErrorMessage}},
+			IsError: true,
+		}, nil, nil
 	}
 
 	var secretNames []string
@@ -82,14 +90,37 @@ func getBulkSecretTool(ctx context.Context, req *mcp.CallToolRequest, args GetBu
 
 func RegisterTools(server *mcp.Server, client dapr.Client) {
 	daprClient = client
+
+	isReadOnly := true
+	isIdempotent := true
+	notDestructive := false
+
 	mcp.AddTool(server, &mcp.Tool{
-		Name:        "get_secret",
-		Title:       "Retrieve Single Authorized Secret",
-		Description: "Retrieves a single, whitelisted secret (e.g., API key, credential) from a configured Dapr secret store. **This is a highly SENSITIVE Data Retrieval operation. Do NOT use unless explicitly asked to retrieve a known, authorized secret.** Requires the store name and the specific secret name.",
+		Name:  "get_secret",
+		Title: "Retrieve Single Authorized Secret",
+		Description: "Retrieves a single, whitelisted secret (e.g., API key, credential) from a configured Dapr secret store. **This is a highly SENSITIVE Data Retrieval operation.** Use ONLY when the user explicitly requests a specific secret.\n\n" +
+			"**ARGUMENT RULES:**\n" +
+			"1. **REQUIRED INPUTS**: You MUST provide non-empty values for `StoreName` and `SecretName`.\n" +
+			"2. **NEVER INVENT**: You must NOT invent `SecretName` or `StoreName` names; they must be provided by the user or discovered.\n" +
+			"3. **CLARIFICATION**: If any required input is missing, you MUST ask the user for clarification.\n\n" +
+			"**SECURITY WARNING**: This tool provides access to critical credentials. NEVER guess secret names, and NEVER store retrieved secrets without explicit authorization.",
+		Annotations: &mcp.ToolAnnotations{
+			ReadOnlyHint:    isReadOnly,
+			DestructiveHint: &notDestructive,
+			IdempotentHint:  isIdempotent,
+		},
 	}, getSecretTool)
 	mcp.AddTool(server, &mcp.Tool{
-		Name:        "get_bulk_secrets",
-		Title:       "Retrieve All Secrets (HIGHLY RESTRICTED)",
-		Description: "Attempts to retrieve ALL secrets that the application has access to from a specific Dapr secret store. **This operation is HIGHLY RESTRICTED due to its massive security risk and is likely disabled in production.** Only use if the request explicitly asks to enumerate all available secrets and you have been authorized to use the specific store.",
+		Name:  "get_bulk_secrets",
+		Title: "Retrieve All Secrets (HIGHLY RESTRICTED)",
+		Description: "Attempts to retrieve ALL secrets the application has access to from a specific Dapr secret store. **This operation is HIGHLY RESTRICTED and extremely high-risk.**\n\n" +
+			"**ARGUMENT RULES:**\n" +
+			"1. **REQUIRED INPUTS**: You MUST provide a non-empty value for `StoreName`.\n" +
+			"2. **RISK WARNING**: Avoid this tool unless the user explicitly requests enumeration of all accessible secrets, as it provides a broad view of the system's credentials.",
+		Annotations: &mcp.ToolAnnotations{
+			ReadOnlyHint:    isReadOnly,
+			DestructiveHint: &notDestructive,
+			IdempotentHint:  isIdempotent,
+		},
 	}, getBulkSecretTool)
 }

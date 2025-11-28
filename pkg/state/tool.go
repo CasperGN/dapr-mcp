@@ -41,9 +41,6 @@ var daprClient dapr.Client
 func saveStateTool(ctx context.Context, req *mcp.CallToolRequest, args SaveStateArgs) (*mcp.CallToolResult, any, error) {
 	data := []byte(args.Value)
 
-	log.Printf("DEBUG: State Save requested. Store: %s, Key: %s, Payload Size: %d",
-		args.StoreName, args.Key, len(data))
-
 	var err error
 
 	if err = daprClient.SaveState(ctx, args.StoreName, args.Key, data, nil); err == nil {
@@ -53,15 +50,23 @@ func saveStateTool(ctx context.Context, req *mcp.CallToolRequest, args SaveState
 			Content: []mcp.Content{&mcp.TextContent{Text: successMessage}},
 		}, map[string]string{"key_saved": args.Key, "store_name": args.StoreName}, nil
 	}
-	return nil, nil, fmt.Errorf("failed to save state to store '%s'. Final error: %v",
-		args.StoreName, err)
+	toolErrorMessage := fmt.Errorf("failed to save state to store '%s'. Final error: %v", args.StoreName, err).Error()
+
+	return &mcp.CallToolResult{
+		Content: []mcp.Content{&mcp.TextContent{Text: toolErrorMessage}},
+		IsError: true,
+	}, nil, nil
 }
 
 func getStateTool(ctx context.Context, req *mcp.CallToolRequest, args GetStateArgs) (*mcp.CallToolResult, any, error) {
 	item, err := daprClient.GetState(ctx, args.StoreName, args.Key, nil)
 	if err != nil {
 		log.Printf("Dapr GetState failed: %v", err)
-		return nil, nil, fmt.Errorf("failed to get state: %w", err)
+		toolErrorMessage := fmt.Errorf("dapr GetState failed: %v", err).Error()
+		return &mcp.CallToolResult{
+			Content: []mcp.Content{&mcp.TextContent{Text: toolErrorMessage}},
+			IsError: true,
+		}, nil, nil
 	}
 
 	result := string(item.Value)
@@ -90,7 +95,11 @@ func getStateTool(ctx context.Context, req *mcp.CallToolRequest, args GetStateAr
 func deleteStateTool(ctx context.Context, req *mcp.CallToolRequest, args DeleteStateArgs) (*mcp.CallToolResult, any, error) {
 	if err := daprClient.DeleteState(ctx, args.StoreName, args.Key, nil); err != nil {
 		log.Printf("Dapr DeleteState failed: %v", err)
-		return nil, nil, fmt.Errorf("failed to delete state: %w", err)
+		toolErrorMessage := fmt.Errorf("dapr DeleteState failed: %v", err).Error()
+		return &mcp.CallToolResult{
+			Content: []mcp.Content{&mcp.TextContent{Text: toolErrorMessage}},
+			IsError: true,
+		}, nil, nil
 	}
 
 	successMessage := fmt.Sprintf("Successfully deleted key '%s' from state store '%s'.", args.Key, args.StoreName)
@@ -127,7 +136,11 @@ func executeTransactionTool(ctx context.Context, req *mcp.CallToolRequest, args 
 
 	if err := daprClient.ExecuteStateTransaction(ctx, args.StoreName, nil, ops); err != nil {
 		log.Printf("Dapr ExecuteStateTransaction failed: %v", err)
-		return nil, nil, fmt.Errorf("failed to execute state transaction: %w", err)
+		toolErrorMessage := fmt.Errorf("dapr ExecuteStateTransaction failed: %v", err).Error()
+		return &mcp.CallToolResult{
+			Content: []mcp.Content{&mcp.TextContent{Text: toolErrorMessage}},
+			IsError: true,
+		}, nil, nil
 	}
 
 	successMessage := fmt.Sprintf("Successfully executed %d state operations in a transaction on store '%s'.", len(args.Items), args.StoreName)
@@ -140,24 +153,66 @@ func executeTransactionTool(ctx context.Context, req *mcp.CallToolRequest, args 
 
 func RegisterTools(server *mcp.Server, client dapr.Client) {
 	daprClient = client
+
+	isReadOnly := true
+	isIdempotent := true
+
+	notReadOnly := false
+	isDestructive := true
+	notDestructive := false
+
 	mcp.AddTool(server, &mcp.Tool{
-		Name:        "save_state",
-		Title:       "Save Single Key-Value State",
-		Description: "Saves a single key-value pair to a Dapr state store. **This is a SIDE-EFFECT action that alters application state.** Use only when the agent needs to persist data or update an entity. The value MUST be a string, typically a JSON object. Requires a whitelisted store name and key.",
+		Name:  "save_state",
+		Title: "Save Single Key-Value State",
+		Description: "Saves a single key-value pair to a Dapr state store. **This is a SIDE-EFFECT action that alters application state and IS IDEMPOTENT.** Use only when the agent needs to persist data or update an entity.\n\n" +
+			"**ARGUMENT RULES:**\n" +
+			"1. **REQUIRED INPUTS**: You MUST provide non-empty values for `StoreName`, `Key`, and `Value`.\n" +
+			"2. **KEY RULE**: The key SHOULD follow `<AppID>||<ResourceURI>||<Index>` when possible for discoverability.\n" +
+			"3. **VALUE RULE**: The `Value` must be a string (plain or JSON-encoded).\n" +
+			"4. **CLARIFICATION**: If any required input is missing, you MUST ask the user for clarification.",
+		Annotations: &mcp.ToolAnnotations{
+			ReadOnlyHint:    notReadOnly,
+			DestructiveHint: &notDestructive,
+			IdempotentHint:  isIdempotent,
+		},
 	}, saveStateTool)
 	mcp.AddTool(server, &mcp.Tool{
-		Name:        "get_state",
-		Title:       "Retrieve Single Key State",
-		Description: "Retrieves the value for a single key from a Dapr state store. **This is a Data Retrieval operation and is non-mutating.** Use to access current application state or previously saved context. Requires a whitelisted store name and key.",
+		Name:  "get_state",
+		Title: "Retrieve Single Key State",
+		Description: "Retrieves the value for a single key from a Dapr state store. **This is a Data Retrieval operation and IS IDEMPOTENT.** Use to access current application state or previously saved context.\n\n" +
+			"**ARGUMENT RULES:**\n" +
+			"1. **REQUIRED INPUTS**: You MUST provide non-empty values for `StoreName` and `Key`.\n" +
+			"2. **NEVER INVENT**: Never invent a `Key`; it must be provided by the user or discovered.\n" +
+			"3. **CLARIFICATION**: If any required input is missing, you MUST ask the user for clarification.",
+		Annotations: &mcp.ToolAnnotations{
+			ReadOnlyHint:   isReadOnly,
+			IdempotentHint: isIdempotent,
+		},
 	}, getStateTool)
 	mcp.AddTool(server, &mcp.Tool{
-		Name:        "delete_state",
-		Title:       "Delete State Key",
-		Description: "Deletes a key-value pair from a Dapr state store. **This is a critical SIDE-EFFECT action that should be used with caution to avoid data loss.** Use only when instructed to remove specific, whitelisted application data. Requires a whitelisted store name and key.",
+		Name:  "delete_state",
+		Title: "Delete State Key",
+		Description: "Deletes a key-value pair from a Dapr state store. **This is a critical, DESTRUCTIVE SIDE-EFFECT action that IS IDEMPOTENT.** Use only when instructed to remove specific, whitelisted application data.\n\n" +
+			"**ARGUMENT RULES:**\n" +
+			"1. **REQUIRED INPUTS**: You MUST provide non-empty values for `StoreName` and `Key`.\n" +
+			"2. **SECURITY WARNING**: This operation can cause data loss. Ensure user intent is clear and the key is authorized for deletion.",
+		Annotations: &mcp.ToolAnnotations{
+			ReadOnlyHint:    notReadOnly,
+			DestructiveHint: &isDestructive,
+			IdempotentHint:  isIdempotent,
+		},
 	}, deleteStateTool)
 	mcp.AddTool(server, &mcp.Tool{
-		Name:        "execute_transaction",
-		Title:       "Execute Atomic State Transaction",
-		Description: "Executes multiple save and/or delete operations atomically (all or nothing) on state stores that support transactions. **This is a complex, high-impact SIDE-EFFECT action.** Use only for batch updates or when strict data consistency is required across multiple keys. ALL keys in the transaction must be explicitly whitelisted.",
+		Name:  "execute_transaction",
+		Title: "Execute Atomic State Transaction",
+		Description: "Executes multiple save and/or delete operations atomically (all or nothing) on state stores that support transactions. **This is a complex, high-impact DESTRUCTIVE SIDE-EFFECT action that is NOT IDEMPOTENT.** Use only for batch updates or when strict data consistency is required across multiple keys.\n\n" +
+			"**ARGUMENT RULES:**\n" +
+			"1. **REQUIRED INPUTS**: You MUST provide a non-empty `StoreName` and a non-empty list of `Items`.\n" +
+			"2. **SECURITY WARNING**: Due to the complexity and potential for destructive operations within the transaction, ensure all actions are fully understood and authorized.",
+		Annotations: &mcp.ToolAnnotations{
+			ReadOnlyHint:    notReadOnly,
+			DestructiveHint: &isDestructive,
+			IdempotentHint:  false,
+		},
 	}, executeTransactionTool)
 }
