@@ -3,8 +3,8 @@ kind: Component
 metadata:
   name: cryptography-vault
 spec:
-  type: cryptography.local.file
+  type: crypto.dapr.localstorage
   version: v1
   metadata:
-  - name: keyVaultKey
-    value: local_keys.json
+    - name: path
+      value: components/
