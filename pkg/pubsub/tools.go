@@ -43,10 +43,15 @@ func publishEventTool(ctx context.Context, req *mcp.CallToolRequest, args Publis
 	successMessage := fmt.Sprintf("Successfully published message to topic '%s' on pubsub component '%s'.", args.Topic, args.PubsubName)
 
 	log.Println(successMessage)
+	structuredResult := map[string]interface{}{
+		"status":      "published",
+		"pubsub_name": args.PubsubName,
+		"topic":       args.Topic,
+	}
 
 	return &mcp.CallToolResult{
 		Content: []mcp.Content{&mcp.TextContent{Text: successMessage}},
-	}, nil, nil
+	}, structuredResult, nil
 }
 
 type PublishWithMetadataArgs struct {
@@ -76,21 +81,28 @@ func publishEventWithMetadataTool(ctx context.Context, req *mcp.CallToolRequest,
 	successMessage := fmt.Sprintf("Successfully published message with %d metadata key(s) to topic '%s' on pubsub component '%s'.", len(args.Metadata), args.Topic, args.PubsubName)
 
 	log.Println(successMessage)
+	structuredResult := map[string]interface{}{
+		"status":        "published_with_metadata",
+		"pubsub_name":   args.PubsubName,
+		"topic":         args.Topic,
+		"metadata_keys": len(args.Metadata),
+	}
 
 	return &mcp.CallToolResult{
 		Content: []mcp.Content{&mcp.TextContent{Text: successMessage}},
-	}, nil, nil
+	}, structuredResult, nil
 }
 
 func RegisterTools(server *mcp.Server, client dapr.Client) {
 	daprClient = client
 	mcp.AddTool(server, &mcp.Tool{
 		Name:        "publish_event",
-		Description: "Publishes a message using Dapr Pub/Sub (simple version). Arguments: pubsubName, topic, message.",
+		Title:       "Publish Event (Simple)",
+		Description: "Publishes a message to a topic using the Dapr Pub/Sub building block. **This is a SIDE-EFFECT action that triggers decoupled, asynchronous workflows across the system.** Use only to broadcast critical events (e.g., 'new order received', 'status changed'). Arguments: pubsubName, topic, message.",
 	}, publishEventTool)
-
 	mcp.AddTool(server, &mcp.Tool{
 		Name:        "publish_event_with_metadata",
-		Description: "Publishes a message using Dapr Pub/Sub, including optional metadata/headers. Arguments: pubsubName, topic, message, metadata.",
+		Title:       "Publish Event (With Metadata)",
+		Description: "Publishes a message to a topic including optional metadata/headers (e.g., routing headers, 'ttlInSeconds' for Message Time-to-Live). **This is a SIDE-EFFECT action.** Use this tool when you need granular control over message delivery or routing. Arguments: pubsubName, topic, message, metadata.",
 	}, publishEventWithMetadataTool)
 }

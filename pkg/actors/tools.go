@@ -33,22 +33,29 @@ func invokeActorMethodTool(ctx context.Context, req *mcp.CallToolRequest, args I
 	}
 
 	resultData := string(resp.Data)
-
 	successMessage := fmt.Sprintf(
 		"Successfully invoked method '%s' on actor type '%s' with ID '%s'. Actor responded with data/status.",
 		args.Method, args.ActorType, args.ActorID,
 	)
 	log.Println(successMessage)
 
+	structuredResult := map[string]string{
+		"actor_type":     args.ActorType,
+		"actor_id":       args.ActorID,
+		"actor_method":   args.Method,
+		"actor_response": resultData,
+	}
+
 	return &mcp.CallToolResult{
 		Content: []mcp.Content{&mcp.TextContent{Text: successMessage + "\n\nResponse:\n" + resultData}},
-	}, resultData, nil
+	}, structuredResult, nil
 }
 
 func RegisterTools(server *mcp.Server, client dapr.Client) {
 	daprClient = client
 	mcp.AddTool(server, &mcp.Tool{
 		Name:        "invoke_actor_method",
-		Description: "Calls a specific method on an instance of a Dapr Virtual Actor (e.g., 'user-1001' on type 'user-manager'). Requires Actor Type, ID, Method, and payload.",
+		Title:       "Execute State-Altering Actor Method",
+		Description: "Executes a method on a Dapr Virtual Actor instance. **This is a stateful action that produces a SIDE EFFECT** (e.g., updating an order status, processing a payment, managing user state). Use this tool only when the requested action requires stateful, single-threaded execution. You must provide the Actor Type, the specific Actor ID, the exact Method name, and the necessary JSON payload in the 'Data' field.",
 	}, invokeActorMethodTool)
 }

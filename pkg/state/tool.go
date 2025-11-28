@@ -51,7 +51,7 @@ func saveStateTool(ctx context.Context, req *mcp.CallToolRequest, args SaveState
 		log.Println(successMessage)
 		return &mcp.CallToolResult{
 			Content: []mcp.Content{&mcp.TextContent{Text: successMessage}},
-		}, nil, nil
+		}, map[string]string{"key_saved": args.Key, "store_name": args.StoreName}, nil
 	}
 	return nil, nil, fmt.Errorf("failed to save state to store '%s'. Final error: %v",
 		args.StoreName, err)
@@ -65,17 +65,26 @@ func getStateTool(ctx context.Context, req *mcp.CallToolRequest, args GetStateAr
 	}
 
 	result := string(item.Value)
+	log.Println(result)
+
+	var structuredResult map[string]string
+
 	if result == "" {
 		result = fmt.Sprintf("Key '%s' not found in state store '%s'.", args.Key, args.StoreName)
+		structuredResult = nil
 	} else {
 		result = fmt.Sprintf("Retrieved key '%s' from '%s'. Value:\n%s", args.Key, args.StoreName, result)
+		structuredResult = map[string]string{
+			"key":   args.Key,
+			"value": string(item.Value),
+		}
 	}
 
 	log.Println(result)
 
 	return &mcp.CallToolResult{
 		Content: []mcp.Content{&mcp.TextContent{Text: result}},
-	}, string(item.Value), nil
+	}, structuredResult, nil
 }
 
 func deleteStateTool(ctx context.Context, req *mcp.CallToolRequest, args DeleteStateArgs) (*mcp.CallToolResult, any, error) {
@@ -89,7 +98,7 @@ func deleteStateTool(ctx context.Context, req *mcp.CallToolRequest, args DeleteS
 
 	return &mcp.CallToolResult{
 		Content: []mcp.Content{&mcp.TextContent{Text: successMessage}},
-	}, nil, nil
+	}, map[string]string{"key_deleted": args.Key, "store_name": args.StoreName}, nil
 }
 
 func executeTransactionTool(ctx context.Context, req *mcp.CallToolRequest, args ExecuteTransactionArgs) (*mcp.CallToolResult, any, error) {
@@ -126,28 +135,29 @@ func executeTransactionTool(ctx context.Context, req *mcp.CallToolRequest, args 
 
 	return &mcp.CallToolResult{
 		Content: []mcp.Content{&mcp.TextContent{Text: successMessage}},
-	}, nil, nil
+	}, map[string]interface{}{"operations_executed": len(args.Items), "store_name": args.StoreName}, nil
 }
 
 func RegisterTools(server *mcp.Server, client dapr.Client) {
 	daprClient = client
 	mcp.AddTool(server, &mcp.Tool{
 		Name:        "save_state",
-		Description: "Saves a single key-value pair to a Dapr state store. The value MUST be a string, typically formatted as a JSON object.",
+		Title:       "Save Single Key-Value State",
+		Description: "Saves a single key-value pair to a Dapr state store. **This is a SIDE-EFFECT action that alters application state.** Use only when the agent needs to persist data or update an entity. The value MUST be a string, typically a JSON object. Requires a whitelisted store name and key.",
 	}, saveStateTool)
-
 	mcp.AddTool(server, &mcp.Tool{
 		Name:        "get_state",
-		Description: "Retrieves the value for a single key from a Dapr state store.",
+		Title:       "Retrieve Single Key State",
+		Description: "Retrieves the value for a single key from a Dapr state store. **This is a Data Retrieval operation and is non-mutating.** Use to access current application state or previously saved context. Requires a whitelisted store name and key.",
 	}, getStateTool)
-
 	mcp.AddTool(server, &mcp.Tool{
 		Name:        "delete_state",
-		Description: "Deletes a key-value pair from a Dapr state store.",
+		Title:       "Delete State Key",
+		Description: "Deletes a key-value pair from a Dapr state store. **This is a critical SIDE-EFFECT action that should be used with caution to avoid data loss.** Use only when instructed to remove specific, whitelisted application data. Requires a whitelisted store name and key.",
 	}, deleteStateTool)
-
 	mcp.AddTool(server, &mcp.Tool{
 		Name:        "execute_transaction",
-		Description: "Executes multiple save and/or delete operations atomically on state stores that support transactions.",
+		Title:       "Execute Atomic State Transaction",
+		Description: "Executes multiple save and/or delete operations atomically (all or nothing) on state stores that support transactions. **This is a complex, high-impact SIDE-EFFECT action.** Use only for batch updates or when strict data consistency is required across multiple keys. ALL keys in the transaction must be explicitly whitelisted.",
 	}, executeTransactionTool)
 }

@@ -72,7 +72,7 @@ func GetDynamicInstructions(ctx context.Context, client dapr.Client) string {
 	for _, comp := range components {
 		compString := fmt.Sprintf("'%s' (Type: %s, Version: %s, Capabilities: %s)",
 			comp.Name,
-			strings.TrimPrefix(comp.Type, comp.Type[:strings.Index(comp.Type, ".")]+"."), // e.g., 'redis' instead of 'state.redis'
+			strings.TrimPrefix(comp.Type, comp.Type[:strings.Index(comp.Type, ".")]+"."),
 			comp.Version,
 			strings.Join(comp.Capabilities, ", "))
 
@@ -98,73 +98,61 @@ func GetDynamicInstructions(ctx context.Context, client dapr.Client) string {
 
 	var body strings.Builder
 
-	// 1. GLOBAL DIRECTIVES: Establish strict rules immediately.
 	body.WriteString("You are an expert AI assistant for Dapr microservices. Your primary goal is to translate user requests into precise Dapr tool calls.\n")
 	body.WriteString("When generating a tool call, you **MUST** adhere to the component names and argument types specified below.\n")
 	body.WriteString("NEVER invent names or arguments not explicitly listed.\n\n")
 
-	// --- State Stores ---
 	if len(stateStores) > 0 {
-		body.WriteString("## 💾 Available State Stores (for tools like `save_state`, `get_state`):\n")
+		body.WriteString("## Available State Stores (for tools like `save_state`, `get_state`):\n")
 		body.WriteString(fmt.Sprintf("- **Names**: %s\n", strings.Join(stateStores, ", ")))
 
-		// 💡 FOOLPROOF SAVE INSTRUCTION: Explicitly addresses missing values and format.
-		body.WriteString("   - **SAVE RULE**: To call `save_state`, you **MUST** provide three non-empty arguments: `storeName`, `key`, and **`value`**. The `value` argument must be the exact literal content provided by the user (e.g., `The new server is amazing!`). **DO NOT** use quotes or escape characters (`\"` or `\\`) within the content of the `value` string itself, as the JSON parser adds them automatically.\n\n")
+		body.WriteString("   - **SAVE RULE**: To call `save_state`, you **MUST** provide three non-empty arguments: `storeName`, `key`, and **`value`**. The `key` should ideally follow the pattern: `<App ID>||<Resource URI Path>||<Chunk Hash/Index>` for discoverability. \n")
+		body.WriteString("   - **VALUE RULE**: The `value` argument is the data payload to be saved (e.g., a simple string like 'Hello World' or a JSON object string like '{\"status\": \"active\"}'). The LLM should ensure the content is correctly serialized as a single string argument.\n\n")
 		body.WriteString("   - **FETCH RULE**: To call `get_state`, you **MUST** provide `storeName` and `key`.\n\n")
 	}
 
-	// --- Pub/Sub Brokers ---
 	if len(pubsubBrokers) > 0 {
-		body.WriteString("## 📩 Available Pub/Sub Brokers (for tools like `publish_event`):\n")
+		body.WriteString("## Available Pub/Sub Brokers (for tools like `publish_event`):\n")
 		body.WriteString(fmt.Sprintf("- **Names**: %s\n", strings.Join(pubsubBrokers, ", ")))
-		// 💡 FOOLPROOF PUBLISH INSTRUCTION: Clarify content requirement.
 		body.WriteString("   - **PUBLISH RULE**: Both `publish_event` tools require non-empty `pubsubName`, `topic`, and `message`. The `message` MUST be the content the user wishes to publish.\n\n")
 	}
 
-	// --- Secret Stores ---
 	if len(secretStores) > 0 {
-		body.WriteString("## 🔑 Available Secret Stores (for tools like `get_secret`, `get_bulk_secrets`):\n")
+		body.WriteString("## Available Secret Stores (for tools like `get_secret`, `get_bulk_secrets`):\n")
 		body.WriteString(fmt.Sprintf("- **Names**: %s\n", strings.Join(secretStores, ", ")))
-		body.WriteString("   - **SECURITY RULE**: Always call `get_secret` with the most specific `secretName` possible. Avoid `get_bulk_secrets` unless necessary, as it retrieves all accessible secrets.\n\n")
+		body.WriteString("   - **SECURITY RULE**: Only use `get_secret` for whitelisted, non-critical secrets. **AVOID `get_bulk_secrets`** unless the user explicitly requests an enumeration of all accessible secrets, as this operation is heavily restricted and carries high risk.\n\n")
 	}
 
-	// --- Distributed Locks ---
 	if len(locks) > 0 {
-		body.WriteString("## 🔒 Available Distributed Locks (for tools like `acquire_lock`, `release_lock`):\n")
+		body.WriteString("## Available Distributed Locks (for tools like `acquire_lock`, `release_lock`):\n")
 		body.WriteString(fmt.Sprintf("- **Names**: %s\n", strings.Join(locks, ", ")))
-		// 💡 FOOLPROOF LOCK INSTRUCTION: Emphasize ownership and required IDs.
 		body.WriteString("   - **LOCK RULE**: `acquire_lock` and `release_lock` require non-empty `storeName`, `resourceID`, and a unique **`lockOwner`** ID.\n\n")
 	}
 
-	// --- Input/Output Bindings ---
 	if len(bindings) > 0 {
-		body.WriteString("## 🔗 Available Input/Output Bindings (for tools like `invoke_output_binding`):\n")
+		body.WriteString("## Available Input/Output Bindings (for tools like `invoke_output_binding`):\n")
 		body.WriteString(fmt.Sprintf("- **Names**: %s\n", strings.Join(bindings, ", ")))
 		body.WriteString("   - **BINDING RULE**: `invoke_output_binding` MUST include a valid `bindingName` and a recognized `operation` (e.g., 'create', 'delete').\n\n")
 	}
 
-	// --- Conversation Models ---
 	if len(conversations) > 0 {
-		body.WriteString("## 💬 Available Conversation Models (for tools like `converse_with_llm`):\n")
+		body.WriteString("## Available Conversation Models (for tools like `converse_with_llm`):\n")
 		body.WriteString(fmt.Sprintf("- **Names**: %s\n", strings.Join(conversations, ", ")))
 		body.WriteString("   - **CONVERSE RULE**: Use this tool to delegate complex reasoning. The `Inputs` argument must contain the full, current conversation history.\n\n")
 	}
 
-	// --- Cryptography Components ---
 	if len(cryptographies) > 0 {
-		body.WriteString("## 🛡️ Available Cryptography Components (for tools like `encrypt_data`, `decrypt_data`):\n")
+		body.WriteString("## Available Cryptography Components (for tools like `encrypt_data`, `decrypt_data`):\n")
 		body.WriteString(fmt.Sprintf("- **Names**: %s\n", strings.Join(cryptographies, ", ")))
 		body.WriteString("   - **CRYPTO RULE**: `encrypt_data` requires `keyName`, `algorithm`, and the `plainText` to be encrypted. Decryption relies on the ciphertext being valid.\n\n")
 	}
 
-	// 2. FAILSAFE INSTRUCTION: Final warning if environment is empty.
 	if body.Len() < 200 {
 		body.WriteString("\n\n**FAILSAFE WARNING**: No Dapr core components were detected. All tools that rely on a component (State, PubSub, etc.) will fail. Only basic Service and Actor invocation tools may be operational.")
 	} else {
 		body.WriteString("\n\n**FINAL RULE**: Before returning a text answer, always check if a tool call is necessary. If a tool call fails, inform the user about the failure and the error message (e.g., 'Dapr failed to save state because...').")
 	}
 
-	// ... (rest of logging and return remains the same) ...
 	return body.String()
 }
 
@@ -194,6 +182,7 @@ func RegisterTools(server *mcp.Server, client dapr.Client) {
 	daprClient = client
 	mcp.AddTool(server, &mcp.Tool{
 		Name:        "get_components",
-		Description: "Retrieves a detailed list of all currently running Dapr components (state stores, pub/sub brokers, etc.) in the sidecar. Use this to confirm valid component names for other tools.",
+		Title:       "Retrieve Live Dapr Component List",
+		Description: "Retrieves a detailed list of all currently running Dapr components (state stores, pub/sub brokers, etc.) in the sidecar. **This is a Data Retrieval operation (read-only, no side effects).** Use this to confirm valid component names for other tools, or to check environment configuration.",
 	}, getMetadataTool)
 }

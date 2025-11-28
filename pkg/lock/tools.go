@@ -52,10 +52,15 @@ func acquireLockTool(ctx context.Context, req *mcp.CallToolRequest, args Acquire
 	}
 
 	log.Println(successMessage)
+	structuredResult := map[string]interface{}{
+		"lock_acquired": resp.Success,
+		"resource_id":   args.ResourceID,
+		"owner_id":      args.LockOwner,
+	}
 
 	return &mcp.CallToolResult{
 		Content: []mcp.Content{&mcp.TextContent{Text: successMessage}},
-	}, resp.Success, nil
+	}, structuredResult, nil
 }
 
 func releaseLockTool(ctx context.Context, req *mcp.CallToolRequest, args ReleaseLockArgs) (*mcp.CallToolResult, any, error) {
@@ -95,21 +100,27 @@ func releaseLockTool(ctx context.Context, req *mcp.CallToolRequest, args Release
 	finalMessage := fmt.Sprintf("Attempted to release lock on resource '%s' (Owner: %s). Result: %s", args.ResourceID, args.LockOwner, statusMessage)
 
 	log.Println(finalMessage)
+	structuredResult := map[string]interface{}{
+		"release_status_code": resp.Status,
+		"release_status_text": statusMessage,
+		"resource_id":         args.ResourceID,
+	}
 
 	return &mcp.CallToolResult{
 		Content: []mcp.Content{&mcp.TextContent{Text: finalMessage}},
-	}, statusMessage, nil
+	}, structuredResult, nil
 }
 
 func RegisterTools(server *mcp.Server, client dapr.Client) {
 	daprClient = client
 	mcp.AddTool(server, &mcp.Tool{
 		Name:        "acquire_lock",
-		Description: "Tries to acquire a distributed lock on a named resource for a specific duration. Essential for coordination in distributed systems.",
+		Title:       "Acquire Resource Coordination Lock",
+		Description: "Tries to acquire a distributed lock on a named resource for exclusive access. **This is a SIDE-EFFECT action used for critical coordination and concurrency control.** Use only when the agent must ensure no other entity is concurrently modifying a shared resource (e.g., before writing to a database). Requires the store name, unique resource ID, owner ID, and a short expiry time in seconds.",
 	}, acquireLockTool)
-
 	mcp.AddTool(server, &mcp.Tool{
 		Name:        "release_lock",
-		Description: "Releases a distributed lock on a resource. Only the owner who acquired the lock can release it.",
+		Title:       "Release Resource Coordination Lock",
+		Description: "Releases a previously acquired distributed lock on a resource. **This is a SIDE-EFFECT action.** It MUST be called immediately after the critical section of code is complete to prevent deadlocks. Only the original owner can release the lock. Requires the store name, resource ID, and lock owner ID.",
 	}, releaseLockTool)
 }

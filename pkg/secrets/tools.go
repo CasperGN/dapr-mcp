@@ -84,11 +84,12 @@ func RegisterTools(server *mcp.Server, client dapr.Client) {
 	daprClient = client
 	mcp.AddTool(server, &mcp.Tool{
 		Name:        "get_secret",
-		Description: "Retrieves a single named secret from a Dapr secret store, returning its key/value content. Requires the store name and the secret name.",
+		Title:       "Retrieve Single Authorized Secret",
+		Description: "Retrieves a single, whitelisted secret (e.g., API key, credential) from a configured Dapr secret store. **This is a highly SENSITIVE Data Retrieval operation. Do NOT use unless explicitly asked to retrieve a known, authorized secret.** Requires the store name and the specific secret name.",
 	}, getSecretTool)
-
 	mcp.AddTool(server, &mcp.Tool{
 		Name:        "get_bulk_secrets",
-		Description: "Retrieves all secrets that the application has access to from a specific Dapr secret store.",
+		Title:       "Retrieve All Secrets (HIGHLY RESTRICTED)",
+		Description: "Attempts to retrieve ALL secrets that the application has access to from a specific Dapr secret store. **This operation is HIGHLY RESTRICTED due to its massive security risk and is likely disabled in production.** Only use if the request explicitly asks to enumerate all available secrets and you have been authorized to use the specific store.",
 	}, getBulkSecretTool)
 }

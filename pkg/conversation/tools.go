@@ -77,17 +77,25 @@ func converseTool(ctx context.Context, req *mcp.CallToolRequest, args dapr.Conve
 	finalMessage := result.String()
 	log.Println(finalMessage)
 
-	responseJSON, _ := json.MarshalIndent(resp, "", "  ")
+	responseJSON, _ := json.Marshal(resp)
+
+	var structuredResult map[string]interface{}
+
+	if err := json.Unmarshal(responseJSON, &structuredResult); err != nil {
+		log.Printf("Warning: Failed to unmarshal response into structured map: %v", err)
+		structuredResult = nil
+	}
 
 	return &mcp.CallToolResult{
 		Content: []mcp.Content{&mcp.TextContent{Text: finalMessage}},
-	}, string(responseJSON), nil
+	}, structuredResult, nil
 }
 
 func RegisterTools(server *mcp.Server, client dapr.Client) {
 	daprClient = client
 	mcp.AddTool(server, &mcp.Tool{
 		Name:        "converse_with_llm",
-		Description: "Interacts with a Large Language Model (LLM) configured via a Dapr conversation component (e.g., OpenAI, Mistral). Use this to delegate complex reasoning tasks or generate text.",
+		Title:       "Delegate Task to External Reasoning Engine",
+		Description: "Delegates a complex reasoning, summarization, or text generation task to a secondary Large Language Model (LLM) configured via a Dapr conversation component (e.g., OpenAI, Mistral). **This tool is Computational and Stateless (no side effect).** Use this only when the primary agent needs to outsource a specialized task, like: generating code, performing a creative writing exercise, or utilizing a model with a different capability set. Requires the Dapr component 'Name' and the list of 'Inputs' (messages).",
 	}, converseTool)
 }

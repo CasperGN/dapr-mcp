@@ -57,16 +57,22 @@ func invokeOutputBindingTool(ctx context.Context, req *mcp.CallToolRequest, args
 	successMessage := fmt.Sprintf("Successfully invoked output binding '%s' with operation '%s'.%s", args.BindingName, args.Operation, resultData)
 
 	log.Println(successMessage)
+	structuredResult := map[string]string{
+		"binding_name":  args.BindingName,
+		"operation":     args.Operation,
+		"response_data": string(resp.Data),
+	}
 
 	return &mcp.CallToolResult{
 		Content: []mcp.Content{&mcp.TextContent{Text: successMessage}},
-	}, nil, nil
+	}, structuredResult, nil
 }
 
 func RegisterTools(server *mcp.Server, client dapr.Client) {
 	daprClient = client
 	mcp.AddTool(server, &mcp.Tool{
 		Name:        "invoke_output_binding",
-		Description: "Invokes an operation (like 'create' or 'get') on a configured Dapr output binding component. Used to interact with external resources like queues or storage. Requires the binding name, operation, data, and optional metadata.",
+		Title:       "Interact with External System via Binding",
+		Description: "Invokes an operation on a Dapr output binding component to interact with external systems (e.g., storage, message queues, external APIs). **Most operations (like 'create' or 'delete') have SIDE EFFECTS.** Use this tool when the goal is to perform an I/O action beyond simple context retrieval. Requires the binding name, the specific operation (e.g., 'create', 'get', 'delete'), data, and optional metadata.",
 	}, invokeOutputBindingTool)
 }

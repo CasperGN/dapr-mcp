@@ -47,16 +47,33 @@ func invokeServiceTool(ctx context.Context, req *mcp.CallToolRequest, args Invok
 		args.AppID, args.Method, args.HTTPVerb,
 	)
 	log.Println(successMessage)
+	var structuredResult map[string]interface{}
+	if len(resp) > 0 {
+		if err := json.Unmarshal(resp, &structuredResult); err != nil {
+			structuredResult = map[string]interface{}{
+				"raw_response": string(resp),
+				"app_id":       args.AppID,
+				"method":       args.Method,
+			}
+		}
+	} else {
+		structuredResult = map[string]interface{}{
+			"status": "success_no_content",
+			"app_id": args.AppID,
+			"method": args.Method,
+		}
+	}
 
 	return &mcp.CallToolResult{
 		Content: []mcp.Content{&mcp.TextContent{Text: successMessage + "\n\nResponse:\n" + resultData.String()}},
-	}, resultData.String(), nil
+	}, structuredResult, nil
 }
 
 func RegisterTools(server *mcp.Server, client dapr.Client) {
 	daprClient = client
 	mcp.AddTool(server, &mcp.Tool{
 		Name:        "invoke_service",
-		Description: "Calls a method (endpoint) on another Dapr-enabled service using its Dapr App ID. Requires App ID, method, HTTP verb, and payload.",
+		Title:       "Execute Inter-Service Request",
+		Description: "Calls a method (endpoint) on another Dapr-enabled service using its Dapr App ID. **This is a SIDE-EFFECT action.** Use this tool to perform transactional business logic, such as updating a database, creating a resource, or triggering a workflow in another microservice. Requires the target App ID, method/endpoint, HTTP verb, and request payload.",
 	}, invokeServiceTool)
 }
