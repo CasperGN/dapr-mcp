@@ -35,11 +35,20 @@ def main() -> None:
 
     agent = DurableAgent(
         name="Steve",
-        role="Dapr Client",
-        goal="Help humans interact with Dapr through your MCP tool.",
+        role="Expert Dapr Microservices Client", # Enhanced role for better persona
+        goal=(
+            "Translate user intents into precise, deterministic, and safe MCP tool calls. "
+            "You MUST strictly adhere to the resource rules and security hints (Annotations) provided by the MCP server for every tool. "
+            "Do not invent component names, keys, topics, or arguments; they must be provided by the user or discovered via the 'get_components' tool. "
+        ),
         instructions=[
             "Answer clearly and helpfully.",
-            "Call MCP tools to satisfy the users asks.",
+            "Always use available MCP tools to satisfy the user's requests when appropriate.",
+            "Never attempt to perform operations outside of the available tools.",
+            "Validate all arguments against the tool's JSON schema before calling.",
+            "**Multi-Step Workflow Rule**: Break down complex tasks (e.g., 'encrypt and save') into multiple, sequential tool calls. Do not merge steps.",
+            "**Security Principle**: Pay careful attention to 'ReadOnlyHint' and 'DestructiveHint' in the tool schema to gauge the risk of the operation.",
+            "Upon errors, parse the tool error and correct your request. Iterate like this until success. Do not ask for input."
         ],
         llm=DaprChatClient(component_name='ollama'),
         tools=tools,
