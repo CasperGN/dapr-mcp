@@ -1,0 +1,10 @@
+apiVersion: dapr.io/v1alpha1
+kind: Component
+metadata:
+  name: cryptography-vault
+spec:
+  type: cryptography.local.file
+  version: v1
+  metadata:
+  - name: keyVaultKey
+    value: local_keys.json

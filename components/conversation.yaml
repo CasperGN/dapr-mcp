@@ -1,0 +1,13 @@
+apiVersion: dapr.io/v1alpha1
+kind: Component
+metadata:
+  name: ollama
+spec:
+  type: conversation.openai
+  metadata:
+  - name: key
+    value: 'ollama'
+  - name: model
+    value: llama3.2:latest
+  - name: endpoint
+    value: 'http://localhost:11434/v1'
