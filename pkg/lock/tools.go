@@ -131,6 +131,11 @@ func RegisterTools(server *mcp.Server, client dapr.Client) {
 		Name:  "acquire_lock",
 		Title: "Acquire Resource Coordination Lock",
 		Description: "Tries to acquire a distributed lock on a named resource for exclusive access. **This is a SIDE-EFFECT action that IS IDEMPOTENT.** Use only when the agent must ensure no other entity is concurrently modifying a shared resource (e.g., before writing to a database).\n\n" +
+			"**GUIDANCE:**\n" +
+			"1. Use `get_components` to find the `Lock Store Name`.\n" +
+			"2. For `Resource ID`, use a unique identifier for the resource (e.g., 'client-file-lock').\n" +
+			"3. For `Lock Owner`, use a unique identifier for the entity (e.g., 'ai-agent-42').\n" +
+			"4. For `Expiry Time`, don't set expiry if unsure.\n\n" +
 			"**ARGUMENT RULES:**\n" +
 			"1. **REQUIRED INPUTS**: You MUST provide non-empty values for `storeName`, `resourceID`, `lockOwner`, and `expiryInSeconds`.\n" +
 			"2. **NEVER INVENT**: You must NOT invent lock owners or resource IDs.\n" +
@@ -147,6 +152,9 @@ func RegisterTools(server *mcp.Server, client dapr.Client) {
 		Name:  "release_lock",
 		Title: "Release Resource Coordination Lock",
 		Description: "Releases a previously acquired distributed lock on a resource. **This is a SIDE-EFFECT action that is NOT IDEMPOTENT.** It MUST be called immediately after the critical section of code is complete to prevent deadlocks.\n\n" +
+			"**GUIDANCE:**\n" +
+			"1. Use `get_components` to find the `Lock Store Name`.\n" +
+			"2. Ensure the `Resource ID` and `Lock Owner` match the values used during acquisition.\n\n" +
 			"**ARGUMENT RULES:**\n" +
 			"1. **REQUIRED INPUTS**: You MUST provide `storeName`, `resourceID`, and the correct `lockOwner`.\n" +
 			"2. **OWNERSHIP**: Only the entity that acquired the lock can release it.\n" +

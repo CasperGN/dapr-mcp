@@ -8,29 +8,75 @@ import (
 	"strings"
 
 	dapr "github.com/dapr/go-sdk/client"
+	"github.com/google/uuid"
 	"github.com/modelcontextprotocol/go-sdk/mcp"
+	"google.golang.org/protobuf/types/known/anypb"
 )
+
+type ConverseArgs struct {
+	Name        string  `json:"name" jsonschema:"The Dapr component name of the LLM service (e.g., 'ollama', 'openai')."`
+	Prompt      string  `json:"prompt" jsonschema:"The user's direct question or instruction to the LLM."`
+	ContextID   string  `json:"contextId,omitempty" jsonschema:"Optional: Unique ID for continuing a specific conversation context/history."`
+	Temperature float64 `json:"temperature,omitempty" jsonschema:"Optional: LLM temperature setting (0.0 to 1.0). Default is 0.7."`
+}
 
 var daprClient dapr.Client
 
-func converseTool(ctx context.Context, req *mcp.CallToolRequest, args dapr.ConversationRequestAlpha2) (*mcp.CallToolResult, any, error) {
-	converseReq := dapr.ConversationRequestAlpha2{
-		Name:        args.Name,
-		ContextID:   args.ContextID,
-		Inputs:      args.Inputs,
-		Parameters:  nil, // params
-		Metadata:    nil, // metadata
-		ScrubPII:    args.ScrubPII,
-		Temperature: args.Temperature,
-		Tools:       args.Tools,
-		ToolChoice:  args.ToolChoice,
+func converseTool(ctx context.Context, req *mcp.CallToolRequest, args ConverseArgs) (*mcp.CallToolResult, any, error) {
+
+	contextID := args.ContextID
+	if contextID == "" {
+		newUUID, err := uuid.NewRandom()
+		if err != nil {
+			log.Printf("Failed to generate UUID: %v", err)
+			contextID = "default-session-id"
+		} else {
+			contextID = newUUID.String()
+			log.Printf("Generated new ContextID: %s", contextID)
+		}
 	}
 
-	if len(args.Metadata) > 0 {
-		converseReq.Metadata = args.Metadata
+	var contextIDPtr *string
+	if contextID != "" {
+		contextIDPtr = &contextID
 	}
-	if len(args.Parameters) > 0 {
-		converseReq.Parameters = args.Parameters
+
+	temperature := args.Temperature
+	if temperature == 0.0 {
+		temperature = 0.7
+	}
+	temperaturePtr := &temperature
+
+	scrubPIIFalse := false
+	scrubPIIPtr := &scrubPIIFalse
+
+	messageContent := dapr.ConversationMessageAlpha2{
+		ConversationMessageOfUser: &dapr.ConversationMessageOfUserAlpha2{
+			Content: []*dapr.ConversationMessageContentAlpha2{{Text: &args.Prompt}},
+		},
+	}
+
+	inputs := []*dapr.ConversationInputAlpha2{
+		{
+			Messages: []*dapr.ConversationMessageAlpha2{&messageContent},
+		},
+	}
+
+	params := make(map[string]*anypb.Any)
+	metadata := make(map[string]string)
+	tools := make([]*dapr.ConversationToolsAlpha2, 0)
+	toolChoice := dapr.ToolChoiceNoneAlpha2
+
+	converseReq := dapr.ConversationRequestAlpha2{
+		Name:        args.Name,
+		ContextID:   contextIDPtr,
+		Inputs:      inputs,
+		ScrubPII:    scrubPIIPtr,
+		Temperature: temperaturePtr,
+		Parameters:  params,
+		Metadata:    metadata,
+		Tools:       tools,
+		ToolChoice:  &toolChoice,
 	}
 
 	resp, err := daprClient.ConverseAlpha2(ctx, converseReq)
@@ -114,11 +160,15 @@ func RegisterTools(server *mcp.Server, client dapr.Client) {
 	mcp.AddTool(server, &mcp.Tool{
 		Name:  "converse_with_llm",
 		Title: "Delegate Task to External Reasoning Engine",
-		Description: "Delegates a complex reasoning, summarization, or text generation task to a secondary Large Language Model (LLM) configured via a Dapr conversation component (e.g., OpenAI, Mistral). **This tool is Computational and Stateless (Read-Only).** Use this tool only when the primary agent needs to outsource a specialized task (e.g., generating code, complex reasoning, or creative writing).\n\n" +
+		Description: "Delegates a single, immediate reasoning or text generation task to a secondary LLM component. The server handles complex message history formatting internally, accepting only the user's direct prompt, the component name, and an optional context ID for session continuity.\n\n" +
+			"**GUIDANCE:**\n" +
+			"1. Use `get_components` to find the `name` of the LLM component.\n" +
+			"2. For `Temperature`, use a value between 0.0 (deterministic) and 1.0 (creative). Default is 0.7.\n\n" +
 			"**ARGUMENT RULES:**\n" +
-			"1. **REQUIRED INPUTS**: You MUST provide the Dapr component `Name` and the full conversation history in the `Inputs` argument.\n" +
-			"2. **NEVER INVENT**: You must NOT invent the component `Name`; it must be provided by the user or discovered via the `get_components` tool.\n" +
-			"3. **HISTORY**: The `Inputs` argument MUST contain the full, current conversation history to maintain context during the delegation.",
+			"1. **REQUIRED INPUTS**: You MUST provide the Dapr component `name` and the user's `prompt`.\n" +
+			"2. **NEVER INVENT**: You must NOT invent the component `name`; it must be provided by the user or discovered via the `get_components` tool.\n" +
+			"3. **CONTEXT**: If provided, the `contextId` is used to maintain history. If omitted, a new session is started.",
+
 		Annotations: &mcp.ToolAnnotations{
 			DestructiveHint: &isDestructive,
 			ReadOnlyHint:    isReadOnly,

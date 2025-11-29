@@ -39,7 +39,7 @@ func GetLiveComponentList(ctx context.Context, client dapr.Client) ([]ComponentI
 			strings.Contains(component.Type, "conversation") ||
 			strings.Contains(component.Type, "secretstores") ||
 			strings.Contains(component.Type, "lock") ||
-			strings.Contains(component.Type, "cryptography") {
+			strings.Contains(component.Type, "crypto") {
 
 			capabilities := component.Capabilities
 			if capabilities == nil {
@@ -98,8 +98,8 @@ func RegisterTools(server *mcp.Server, client dapr.Client) {
 
 	mcp.AddTool(server, &mcp.Tool{
 		Name:        "get_components",
-		Title:       "Retrieve Live Dapr Component List",
-		Description: "Retrieves a detailed list of all currently running Dapr components (state stores, pub/sub brokers, etc.) in the sidecar. Use the structured result of this call to find valid component names (e.g., 'statestore-redis') for use in other tool calls.",
+		Title:       "Retrieve Live Dapr Component List (Call This First)",
+		Description: "Call this tool first. It retrieves a detailed list of all currently running Dapr components (state stores, pub/sub brokers, bindings, conversations, secret stores, locks, cryptography, etc.) in the sidecar. Use the structured result of this call to discover valid component names (e.g., 'statestore-redis') and capabilities before invoking other tools.",
 		Annotations: &mcp.ToolAnnotations{
 			ReadOnlyHint: true,
 		},

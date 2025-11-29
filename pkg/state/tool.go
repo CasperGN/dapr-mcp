@@ -165,6 +165,9 @@ func RegisterTools(server *mcp.Server, client dapr.Client) {
 		Name:  "save_state",
 		Title: "Save Single Key-Value State",
 		Description: "Saves a single key-value pair to a Dapr state store. **This is a SIDE-EFFECT action that alters application state and IS IDEMPOTENT.** Use only when the agent needs to persist data or update an entity.\n\n" +
+			"**GUIDANCE:**\n" +
+			"1. Use `get_components` to find the `StoreName` of the state store.\n" +
+			"2. For `Key`, use a meaningful identifier (e.g., `<AppID>:<ResourceURI>:<Index>`).\n\n" +
 			"**ARGUMENT RULES:**\n" +
 			"1. **REQUIRED INPUTS**: You MUST provide non-empty values for `StoreName`, `Key`, and `Value`.\n" +
 			"2. **KEY RULE**: The key SHOULD follow `<AppID>||<ResourceURI>||<Index>` when possible for discoverability.\n" +
@@ -180,6 +183,9 @@ func RegisterTools(server *mcp.Server, client dapr.Client) {
 		Name:  "get_state",
 		Title: "Retrieve Single Key State",
 		Description: "Retrieves the value for a single key from a Dapr state store. **This is a Data Retrieval operation and IS IDEMPOTENT.** Use to access current application state or previously saved context.\n\n" +
+			"**GUIDANCE:**\n" +
+			"1. Use `get_components` to find the `StoreName` of the state store.\n" +
+			"2. Ensure `Key` is explicitly provided by the user or use the key previously used for save.\n\n" +
 			"**ARGUMENT RULES:**\n" +
 			"1. **REQUIRED INPUTS**: You MUST provide non-empty values for `StoreName` and `Key`.\n" +
 			"2. **NEVER INVENT**: Never invent a `Key`; it must be provided by the user or discovered.\n" +
@@ -193,6 +199,9 @@ func RegisterTools(server *mcp.Server, client dapr.Client) {
 		Name:  "delete_state",
 		Title: "Delete State Key",
 		Description: "Deletes a key-value pair from a Dapr state store. **This is a critical, DESTRUCTIVE SIDE-EFFECT action that IS IDEMPOTENT.** Use only when instructed to remove specific, whitelisted application data.\n\n" +
+			"**GUIDANCE:**\n" +
+			"1. Use `get_components` to find the `StoreName` of the state store.\n" +
+			"2. Ensure `Key` is explicitly provided by the user or use the key previously used for save.\n\n" +
 			"**ARGUMENT RULES:**\n" +
 			"1. **REQUIRED INPUTS**: You MUST provide non-empty values for `StoreName` and `Key`.\n" +
 			"2. **SECURITY WARNING**: This operation can cause data loss. Ensure user intent is clear and the key is authorized for deletion.",
@@ -206,6 +215,9 @@ func RegisterTools(server *mcp.Server, client dapr.Client) {
 		Name:  "execute_transaction",
 		Title: "Execute Atomic State Transaction",
 		Description: "Executes multiple save and/or delete operations atomically (all or nothing) on state stores that support transactions. **This is a complex, high-impact DESTRUCTIVE SIDE-EFFECT action that is NOT IDEMPOTENT.** Use only for batch updates or when strict data consistency is required across multiple keys.\n\n" +
+			"**GUIDANCE:**\n" +
+			"1. Use `get_components` to find the `StoreName` of the state store.\n" +
+			"2. Ensure `Items` contains valid save/delete operations.\n\n" +
 			"**ARGUMENT RULES:**\n" +
 			"1. **REQUIRED INPUTS**: You MUST provide a non-empty `StoreName` and a non-empty list of `Items`.\n" +
 			"2. **SECURITY WARNING**: Due to the complexity and potential for destructive operations within the transaction, ensure all actions are fully understood and authorized.",

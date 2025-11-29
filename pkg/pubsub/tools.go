@@ -18,20 +18,14 @@ type PublishArgs struct {
 var daprClient dapr.Client
 
 func publishEventTool(ctx context.Context, req *mcp.CallToolRequest, args PublishArgs) (*mcp.CallToolResult, any, error) {
-	client, err := dapr.NewClient()
-	if err != nil {
-		log.Printf("Failed to create Dapr client: %v", err)
-		toolErrorMessage := fmt.Sprintf("failed to publish event to topic '%s' on pubsub '%s'. Dapr Error: %v", args.Topic, args.PubsubName, err)
-		return &mcp.CallToolResult{
-			Content: []mcp.Content{&mcp.TextContent{Text: toolErrorMessage}},
-			IsError: true,
-		}, nil, nil
-	}
-	defer client.Close()
 
 	data := []byte(args.Message)
 
-	if err := client.PublishEvent(ctx, args.PubsubName, args.Topic, data); err != nil {
+	opts := []dapr.PublishEventOption{
+		dapr.PublishEventWithContentType("application/json"),
+	}
+
+	if err := daprClient.PublishEvent(ctx, args.PubsubName, args.Topic, data, opts...); err != nil {
 		log.Printf("Dapr PublishEvent failed: %v", err)
 		return &mcp.CallToolResult{
 			Content: []mcp.Content{&mcp.TextContent{
@@ -68,6 +62,7 @@ func publishEventWithMetadataTool(ctx context.Context, req *mcp.CallToolRequest,
 	if len(args.Metadata) > 0 {
 		opts = append(opts, dapr.PublishEventWithMetadata(args.Metadata))
 	}
+	opts = append(opts, dapr.PublishEventWithContentType("application/json"))
 
 	if err := daprClient.PublishEvent(ctx, args.PubsubName, args.Topic, data, opts...); err != nil {
 		log.Printf("Dapr PublishEventWithMetadata failed: %v", err)
@@ -104,6 +99,9 @@ func RegisterTools(server *mcp.Server, client dapr.Client) {
 		Name:  "publish_event",
 		Title: "Publish Event (Simple)",
 		Description: "Publishes a message to a topic using the Dapr Pub/Sub building block. **This is a SIDE-EFFECT action that triggers decoupled, asynchronous workflows.** Publishing is additive (non-destructive) but NOT IDEMPOTENT (sending twice results in two messages).\n\n" +
+			"**GUIDANCE:**\n" +
+			"1. Use the `get_components` tool to discover available pubsub components and their names before invoking this tool.\n" +
+			"2. Ensure the `PubsubName` matches a valid pubsub component name.\n\n" +
 			"**ARGUMENT RULES:**\n" +
 			"1. **REQUIRED INPUTS**: You MUST provide non-empty values for `PubsubName`, `Topic`, and `Message`.\n" +
 			"2. **NEVER INVENT**: You must NOT invent `PubsubName` or `Topic` names.\n" +
@@ -120,9 +118,13 @@ func RegisterTools(server *mcp.Server, client dapr.Client) {
 		Name:  "publish_event_with_metadata",
 		Title: "Publish Event (With Metadata)",
 		Description: "Publishes a message to a topic including optional metadata/headers (e.g., routing headers, 'ttlInSeconds'). **This is a SIDE-EFFECT action.** Use this tool when you need granular control over message delivery or routing.\n\n" +
+			"**GUIDANCE:**\n" +
+			"1. Use the `get_components` tool to discover available pubsub components and their names before invoking this tool.\n" +
+			"2. Ensure the `PubsubName` matches a valid pubsub component name.\n\n" +
 			"**ARGUMENT RULES:**\n" +
 			"1. **REQUIRED INPUTS**: You MUST provide non-empty values for `PubsubName`, `Topic`, and `Message`.\n" +
-			"2. **METADATA RULE**: The `Metadata` field MUST be a dictionary/map containing valid key-value pairs for the pubsub component (e.g., message time-to-live).",
+			"2. **METADATA RULE**: The `Metadata` field MUST be a dictionary/map containing valid key-value pairs for the pubsub component (e.g., message time-to-live).\n" +
+			"3. **DEFAULTS**: If `Metadata` is empty, the message will be published without additional headers or routing data.",
 		Annotations: &mcp.ToolAnnotations{
 			ReadOnlyHint:    false,
 			DestructiveHint: &notDestructive,

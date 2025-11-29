@@ -80,12 +80,14 @@ func RegisterTools(server *mcp.Server, client dapr.Client) {
 		Name:  "invoke_output_binding",
 		Title: "Interact with External System via Binding",
 		Description: "Invokes an operation on a Dapr output binding component to interact with external systems (e.g., queues, databases, webhooks). **This is a SIDE-EFFECT action that can be DESTRUCTIVE.** Use this tool to perform I/O actions.\n\n" +
+			"**GUIDANCE:**\n" +
+			"1. Use `get_components` to find the `BindingName` of the output binding.\n" +
+			"2. Ensure `Operation` and `Data` are explicitly provided by the user.\n\n" +
 			"**ARGUMENT RULES:**\n" +
 			"1. **REQUIRED INPUTS**: You MUST provide non-empty values for `BindingName`, `Operation`, and the `Data` payload.\n" +
 			"2. **NEVER INVENT**: You must NOT invent `BindingName` or `Operation` names; they must be provided by the user or discovered.\n" +
-			"3. **CLARIFICATION**: If any required input is missing, you MUST ask the user for clarification before generating the tool call.\n" +
-			"4. **METADATA**: The `Metadata` field MUST be used to pass headers or component-specific settings (e.g., overriding the target URL for an HTTP binding).\n\n" +
-			"**SECURITY WARNING**: This tool allows interaction with external resources, potentially causing irreversible changes (e.g., placing an order, deleting a resource). Ensure user intent is clear and the operation is authorized.",
+			"3. **CLARIFICATION**: If any required input is missing, you MUST ask the user for clarification before generating the tool call.\n\n" +
+			"**METADATA**: The `Metadata` field MUST be used to pass headers or component-specific settings (e.g., overriding the target URL for an HTTP binding).",
 		Annotations: &mcp.ToolAnnotations{
 			DestructiveHint: &isDestructive,
 			ReadOnlyHint:    notReadOnly,

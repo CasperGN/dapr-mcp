@@ -99,6 +99,9 @@ func RegisterTools(server *mcp.Server, client dapr.Client) {
 		Name:  "get_secret",
 		Title: "Retrieve Single Authorized Secret",
 		Description: "Retrieves a single, whitelisted secret (e.g., API key, credential) from a configured Dapr secret store. **This is a highly SENSITIVE Data Retrieval operation.** Use ONLY when the user explicitly requests a specific secret.\n\n" +
+			"**GUIDANCE:**\n" +
+			"1. Use `get_components` to find the `StoreName` of the secret store.\n" +
+			"2. Ensure `SecretName` is explicitly provided by the user.\n\n" +
 			"**ARGUMENT RULES:**\n" +
 			"1. **REQUIRED INPUTS**: You MUST provide non-empty values for `StoreName` and `SecretName`.\n" +
 			"2. **NEVER INVENT**: You must NOT invent `SecretName` or `StoreName` names; they must be provided by the user or discovered.\n" +
@@ -114,6 +117,9 @@ func RegisterTools(server *mcp.Server, client dapr.Client) {
 		Name:  "get_bulk_secrets",
 		Title: "Retrieve All Secrets (HIGHLY RESTRICTED)",
 		Description: "Attempts to retrieve ALL secrets the application has access to from a specific Dapr secret store. **This operation is HIGHLY RESTRICTED and extremely high-risk.**\n\n" +
+			"**GUIDANCE:**\n" +
+			"1. Use `get_components` to find the `StoreName` of the secret store.\n" +
+			"2. Ensure the user explicitly requests bulk retrieval and understands the risks.\n\n" +
 			"**ARGUMENT RULES:**\n" +
 			"1. **REQUIRED INPUTS**: You MUST provide a non-empty value for `StoreName`.\n" +
 			"2. **RISK WARNING**: Avoid this tool unless the user explicitly requests enumeration of all accessible secrets, as it provides a broad view of the system's credentials.",

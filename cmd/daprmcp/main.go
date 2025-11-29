@@ -15,7 +15,7 @@ import (
 	actor "github.com/CasperGN/daprmcp/pkg/actors"
 	binding "github.com/CasperGN/daprmcp/pkg/bindings"
 	conversation "github.com/CasperGN/daprmcp/pkg/conversation"
-	cryptography "github.com/CasperGN/daprmcp/pkg/cryptography"
+	crypto "github.com/CasperGN/daprmcp/pkg/crypto"
 	invoke "github.com/CasperGN/daprmcp/pkg/invoke"
 	lock "github.com/CasperGN/daprmcp/pkg/lock"
 	metadata "github.com/CasperGN/daprmcp/pkg/metadata"
@@ -64,7 +64,7 @@ func main() {
 	instructions.WriteString("You are an expert AI assistant for Dapr microservices. Your role is to translate user requests into precise, deterministic, and safe Dapr MCP tool calls.\n\n")
 
 	instructions.WriteString("### Global Safety Rules\n")
-	instructions.WriteString("- **Clarity Before Acting**: If ANY required argument is missing (store name, key, topic, etc.), you **MUST ask the user for clarification before calling a tool**.\n")
+	instructions.WriteString("- **Clarity Before Acting**: If ANY required argument is missing (store name, key, topic, etc.), you **MUST run the get_components tool to enrich the information before proceeding**. If arguments are still missing first try the tool with sensible defaults, if this fails ask the user for clarification.\n")
 	instructions.WriteString("- **Serialization**: Metadata fields MUST be a dictionary/map (e.g., `{}`) and NEVER a quoted string (e.g., `\"{}\"`).\n")
 	instructions.WriteString("- **Multi-Step Workflow**: When multiple operations are requested, execute them sequentially — **one tool call at a time**.\n")
 	instructions.WriteString("- **Forbidden Actions**: NEVER invent component names, keys, topics, or cryptographic parameters.\n\n")
@@ -102,8 +102,8 @@ func main() {
 			componentPresence["lock"] = true
 		} else if strings.HasPrefix(comp.Type, "conversation.") {
 			componentPresence["conversation"] = true
-		} else if strings.HasPrefix(comp.Type, "cryptography.") {
-			componentPresence["cryptography"] = true
+		} else if strings.HasPrefix(comp.Type, "crypto.") {
+			componentPresence["crypto"] = true
 		}
 	}
 
@@ -122,8 +122,8 @@ func main() {
 	if componentPresence["conversation"] {
 		conversation.RegisterTools(server, DaprClient)
 	}
-	if componentPresence["cryptography"] {
-		cryptography.RegisterTools(server, DaprClient)
+	if componentPresence["crypto"] {
+		crypto.RegisterTools(server, DaprClient)
 	}
 	if componentPresence["lock"] {
 		lock.RegisterTools(server, DaprClient)

@@ -85,11 +85,13 @@ func RegisterTools(server *mcp.Server, client dapr.Client) {
 		Name:  "invoke_service",
 		Title: "Execute Inter-Service Request",
 		Description: "Calls a method (endpoint) on another Dapr-enabled service. **This is a SIDE-EFFECT action that can be DESTRUCTIVE and is NOT IDEMPOTENT for POST/PUT calls.** Use this tool to perform transactional business logic (e.g., updating data, creating resources, triggering workflows).\n\n" +
+			"**GUIDANCE:**\n" +
+			"1. Use `get_components` to find the `AppID` of the target service.\n" +
+			"2. For `HTTPVerb`, use 'GET' for read-only status checks, 'POST' for creation, and 'DELETE' for removal. Default is 'POST'.\n\n" +
 			"**ARGUMENT RULES:**\n" +
 			"1. **REQUIRED INPUTS**: You MUST provide non-empty values for `AppID`, `Method`, and `HTTPVerb`.\n" +
 			"2. **NEVER INVENT**: You must NOT invent `AppID` or `Method` names; they must be provided by the user or discovered.\n" +
-			"3. **VERB USAGE**: Use 'GET' for read-only status checks, 'POST' for creation, and 'DELETE' for removal. The default is 'POST'.\n" +
-			"4. **CLARIFICATION**: If any required input is missing, you MUST ask the user for clarification.\n\n" +
+			"3. **CLARIFICATION**: If any required input is missing, you MUST ask the user for clarification.\n\n" +
 			"**SECURITY WARNING**: This tool bypasses the standard Resource/Tool abstraction and directly executes service logic. Ensure user intent is clear and the operation is authorized.",
 		Annotations: &mcp.ToolAnnotations{
 			DestructiveHint: &isDestructive,

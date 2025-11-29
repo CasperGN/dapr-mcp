@@ -67,12 +67,14 @@ func RegisterTools(server *mcp.Server, client dapr.Client) {
 		Name:  "invoke_actor_method",
 		Title: "Execute Stateful Actor Method",
 		Description: "Executes a method on a Dapr Virtual Actor instance, providing durability and concurrency control. **This is a SIDE-EFFECT action that alters state (e.g., creating an order, updating a payment status).** Use this tool exclusively for requests that require stateful, single-threaded execution.\n\n" +
+			"**GUIDANCE:**\n" +
+			"1. Use `get_components` to find the `ActorType` of the actor.\n" +
+			"2. Ensure `ActorID` and `Method` are explicitly provided by the user.\n\n" +
 			"**ARGUMENT RULES:**\n" +
 			"1. **REQUIRED INPUTS**: You MUST provide non-empty values for `ActorType`, `ActorID`, `Method`, and `Data`.\n" +
 			"2. **NEVER INVENT**: You must NOT invent the `ActorType`, `ActorID`, or `Method` names; they must be provided by the user or discovered via another tool.\n" +
-			"3. **CLARIFICATION**: If any required input is missing, you MUST ask the user for clarification before generating the tool call.\n" +
-			"4. **DATA FORMAT**: The `Data` payload MUST be a single string (often JSON) representing the input parameters for the actor method.\n\n" +
-			"**SECURITY WARNING**: This tool is inherently transactional and can lead to irreversible state changes (e.g., resource deletion or order cancellation). Proceed with extreme caution and ensure user intent is clear.",
+			"3. **CLARIFICATION**: If any required input is missing, you MUST ask the user for clarification before generating the tool call.\n\n" +
+			"**DATA FORMAT**: The `Data` payload MUST be a single string (often JSON) representing the input parameters for the actor method.",
 		Annotations: &mcp.ToolAnnotations{
 			DestructiveHint: &isDestructive,
 			ReadOnlyHint:    notReadOnly,
