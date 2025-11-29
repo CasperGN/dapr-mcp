@@ -9,7 +9,7 @@ As this project is still very much WIP, below you'll find the relevant status of
 |---|---|--|------|------|
 | actors | invoke_actor_method | ? | | |
 | bindings | invoke_output_binding | Functional | | Issue an http call with dapr by sending the content of mcp.json as a post request |
-| conversation | converse_with_llm | Not functional | | |
+| conversation | converse_with_llm | Functional | | Can you converse with the llm in your tools about dapr? |
 | crypto | encrypt_data | Not Functional | This tool can get blocked by some models. | |
 | crypto | decrypt_data | Not Functional | This tool gets blocked often by standard agents. | |
 | invoke | invoke_service | ? | | |
