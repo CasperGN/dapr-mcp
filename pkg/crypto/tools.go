@@ -1,7 +1,6 @@
 package cryptography
 
 import (
-	"bytes"
 	"context"
 	"fmt"
 	"io"
@@ -14,26 +13,24 @@ import (
 
 type EncryptArgs struct {
 	ComponentName string `json:"componentName" jsonschema:"The name of the Dapr Cryptography component."`
-	KeyName       string `json:"keyName" jsonschema:"The name of the key to use for encryption, stored in the component/vault."`
-	Algorithm     string `json:"algorithm" jsonschema:"The algorithm used for wrapping the key (e.g., 'RSA', 'AES')."`
 	PlainText     string `json:"plainText" jsonschema:"The plain text message to be encrypted."`
 }
 
 type DecryptArgs struct {
 	ComponentName string `json:"componentName" jsonschema:"The name of the Dapr Cryptography component."`
 	CipherText    string `json:"cipherText" jsonschema:"The base64-encoded encrypted message to be decrypted."`
-	KeyName       string `json:"keyName,omitempty" jsonschema:"Optional: The name of the key to use for decryption, if not embedded in the cipher text header."`
 }
 
 var daprClient dapr.Client
 
 func encryptTool(ctx context.Context, req *mcp.CallToolRequest, args EncryptArgs) (*mcp.CallToolResult, any, error) {
 	plainStream := strings.NewReader(args.PlainText)
+	log.Printf("%v", plainStream)
 
 	encryptOpts := dapr.EncryptOptions{
 		ComponentName:    args.ComponentName,
-		KeyName:          args.KeyName,
-		KeyWrapAlgorithm: args.Algorithm,
+		KeyName:          "rsa-private-key.pem",
+		KeyWrapAlgorithm: "RSA",
 	}
 
 	cipherStream, err := daprClient.Encrypt(ctx, plainStream, encryptOpts)
@@ -46,8 +43,8 @@ func encryptTool(ctx context.Context, req *mcp.CallToolRequest, args EncryptArgs
 		}, nil, nil
 	}
 
-	var cipherBuf bytes.Buffer
-	if _, err := io.Copy(&cipherBuf, cipherStream); err != nil {
+	cipherBuf, err := io.ReadAll(cipherStream)
+	if err != nil {
 		toolErrorMessage := fmt.Errorf("failed to read encrypted stream: %w", err).Error()
 		return &mcp.CallToolResult{
 			Content: []mcp.Content{&mcp.TextContent{Text: toolErrorMessage}},
@@ -55,18 +52,15 @@ func encryptTool(ctx context.Context, req *mcp.CallToolRequest, args EncryptArgs
 		}, nil, nil
 	}
 
-	cipherText := cipherBuf.String()
+	cipherText := string(cipherBuf)
 
 	successMessage := fmt.Sprintf(
-		"Successfully encrypted message using component '%s' and key '%s'. Cipher Text is returned in the tool result.",
+		"Successfully encrypted message using component '%s'. Cipher Text is returned in the tool result.",
 		args.ComponentName,
-		args.KeyName,
 	)
 	log.Println(successMessage)
 	structuredResult := map[string]string{
 		"cipher_text": cipherText,
-		"key_name":    args.KeyName,
-		"algorithm":   args.Algorithm,
 	}
 
 	return &mcp.CallToolResult{
@@ -79,9 +73,7 @@ func decryptTool(ctx context.Context, req *mcp.CallToolRequest, args DecryptArgs
 
 	decryptOpts := dapr.DecryptOptions{
 		ComponentName: args.ComponentName,
-	}
-	if args.KeyName != "" {
-		decryptOpts.KeyName = args.KeyName
+		KeyName:       "rsa-private-key.pem",
 	}
 
 	plainStream, err := daprClient.Decrypt(ctx, cipherStream, decryptOpts)
@@ -94,8 +86,8 @@ func decryptTool(ctx context.Context, req *mcp.CallToolRequest, args DecryptArgs
 		}, nil, nil
 	}
 
-	var plainBuf bytes.Buffer
-	if _, err := io.Copy(&plainBuf, plainStream); err != nil {
+	plainBuf, err := io.ReadAll(plainStream)
+	if err != nil {
 		toolErrorMessage := fmt.Errorf("failed to read decrypted stream: %w", err).Error()
 		return &mcp.CallToolResult{
 			Content: []mcp.Content{&mcp.TextContent{Text: toolErrorMessage}},
@@ -103,7 +95,7 @@ func decryptTool(ctx context.Context, req *mcp.CallToolRequest, args DecryptArgs
 		}, nil, nil
 	}
 
-	plainText := plainBuf.String()
+	plainText := string(plainBuf)
 
 	successMessage := fmt.Sprintf(
 		"Successfully decrypted message using component '%s'. Plain text is returned in the tool result.",
@@ -137,12 +129,13 @@ func RegisterTools(server *mcp.Server, client dapr.Client) {
 	mcp.AddTool(server, &mcp.Tool{
 		Name:  "encrypt_data",
 		Title: "Encrypt Sensitive Data for Confidentiality",
-		Description: "Encrypts arbitrary plain text data using a specified key and algorithm from a Dapr cryptography component. **This is a SIDE-EFFECT action (mutates data form) that is NOT IDEMPOTENT.** Use ONLY when the user explicitly says 'encrypt this' or 'store this encrypted'.\n\n" +
+		Description: "Encrypts arbitrary plain text data using a Dapr cryptography component. **This is a SIDE-EFFECT action (mutates data form) that is NOT IDEMPOTENT.** Use ONLY when the user explicitly says 'encrypt this' or 'store this encrypted'.\n\n" +
+			"**GUIDANCE:**\n" +
+			"1. Use `get_components` to find the `ComponentName` of the cryptography component.\n\n" +
 			"**ARGUMENT RULES:**\n" +
-			"1. **REQUIRED INPUTS**: You MUST provide non-empty values for `ComponentName`, `KeyName`, `Algorithm`, and `PlainText`.\n" +
-			"2. **NEVER INVENT**: You must NOT invent `KeyName` or `Algorithm` names; they must be provided by the user or retrieved from another source.\n" +
-			"3. **CLARIFICATION**: If any required input is missing, you MUST ask the user for clarification.\n" +
-			"4. **WORKFLOW RULE**: The output from `encrypt_data` is the ciphertext to be used in subsequent storage or publication steps. DO NOT look up keys using the secret store unless explicitly authorized.",
+			"1. **REQUIRED INPUTS**: You MUST provide non-empty values for `ComponentName` and `PlainText`.\n" +
+			"3. **CLARIFICATION**: If any required input is missing, you MUST ask the user for clarification.\n\n" +
+			"**WORKFLOW RULE**: The output from `encrypt_data` is the ciphertext to be used in subsequent storage or publication steps.",
 		Annotations: &mcp.ToolAnnotations{
 			DestructiveHint: &isDestructive,
 			ReadOnlyHint:    notReadOnly,
@@ -155,9 +148,15 @@ func RegisterTools(server *mcp.Server, client dapr.Client) {
 		Name:  "decrypt_data",
 		Title: "Decrypt Sensitive Cipher Text",
 		Description: "Decrypts encrypted cipher text data back into its original plain text form. **This is a Data Retrieval operation (Read-Only) that IS IDEMPOTENT.** Use ONLY when the user explicitly requests to read data that was previously encrypted.\n\n" +
+			"**GUIDANCE:**\n" +
+			"1. Use `get_components` to find the `ComponentName` of the cryptography component.\n" +
+			"2. Ensure the `ComponentName` matches a valid cryptography component name.\n\n" +
 			"**ARGUMENT RULES:**\n" +
 			"1. **REQUIRED INPUTS**: You MUST provide non-empty values for `ComponentName` and `CipherText`.\n" +
-			"2. **CLARIFICATION**: If the required key is not embedded in the ciphertext header, you MUST ask the user for the explicit `KeyName`.",
+			"2. **OPTIONAL INPUTS**: If the required key is not embedded in the ciphertext header, you MUST ask the user for the explicit `KeyName`.\n" +
+			"3. **CLARIFICATION**: If any required input is missing, you MUST ask the user for clarification.\n\n" +
+			"**DEFAULTS:**\n" +
+			"- If `KeyName` is not provided, the tool will attempt to use the key embedded in the ciphertext header, if available.",
 		Annotations: &mcp.ToolAnnotations{
 			DestructiveHint: &notDestructive,
 			ReadOnlyHint:    isReadOnly,
