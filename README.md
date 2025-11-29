@@ -1,6 +1,30 @@
 # dapr-mcp
 MCP Server for Dapr APIs
 
+## Status
+
+As this project is still very much WIP, below you'll find the relevant status of the tools
+
+| tool-category | tool | status | notes | test |
+|---|---|--|------|------|
+| actors | invoke_actor_method | ? | | |
+| bindings | invoke_output_binding | Functional | | Issue an http call with dapr by sending the content of mcp.json as a post request |
+| conversation | converse_with_llm | Not functional | | |
+| crypto | encrypt_data | Not Functional | This tool can get blocked by some models. | |
+| crypto | decrypt_data | Not Functional | This tool gets blocked often by standard agents. | |
+| invoke | invoke_service | ? | | |
+| lock | acquire_lock | Functional | | Get a lock on <filename> |
+| lock | release_lock | Functional | | Release the lock |
+| metadata | get_components | Functional | | find which components are available |
+| pubsub | publish_event | Not Functional | | |
+| pubsub | publish_event_with_metadata | Not Functional | | |
+| secrets | get_secret | Functional | Description could be better | get the secret "agent-configuration:log_level" |
+| secrets | get_bulk_secrets | Functional | | bulk get all secrets |
+| state | save_state | Functional | | Save the content of mcp.json with dapr |
+| state | get_state | Functional | | Get the saved file |
+| state | delete_state | Functional | | Delete the saved file |
+| state | execute_transaction | Functional | | Atomically save all files under .github/workflows with dapr |
+
 ## Run locally
 
 Setup:
