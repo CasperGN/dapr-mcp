@@ -25,7 +25,6 @@ var daprClient dapr.Client
 
 func encryptTool(ctx context.Context, req *mcp.CallToolRequest, args EncryptArgs) (*mcp.CallToolResult, any, error) {
 	plainStream := strings.NewReader(args.PlainText)
-	log.Printf("%v", plainStream)
 
 	encryptOpts := dapr.EncryptOptions{
 		ComponentName:    args.ComponentName,
