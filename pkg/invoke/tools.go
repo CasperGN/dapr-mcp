@@ -9,6 +9,8 @@ import (
 
 	dapr "github.com/dapr/go-sdk/client"
 	"github.com/modelcontextprotocol/go-sdk/mcp"
+	"go.opentelemetry.io/otel"
+	"go.opentelemetry.io/otel/propagation"
 )
 
 type InvokeServiceArgs struct {
@@ -22,6 +24,9 @@ type InvokeServiceArgs struct {
 var daprClient dapr.Client
 
 func invokeServiceTool(ctx context.Context, req *mcp.CallToolRequest, args InvokeServiceArgs) (*mcp.CallToolResult, any, error) {
+	ctx, span := otel.Tracer("daprmcp").Start(ctx, "invoke_service")
+	defer span.End()
+
 	if args.HTTPVerb == "" {
 		args.HTTPVerb = "POST"
 	}
@@ -30,6 +35,14 @@ func invokeServiceTool(ctx context.Context, req *mcp.CallToolRequest, args Invok
 		ContentType: "application/json",
 		Data:        []byte(args.Data),
 	}
+
+	// Merge user metadata with baggage
+	metadata := make(map[string]string)
+	for k, v := range args.Metadata {
+		metadata[k] = v
+	}
+	propagator := otel.GetTextMapPropagator()
+	propagator.Inject(ctx, propagation.MapCarrier(metadata))
 
 	resp, err := daprClient.InvokeMethodWithContent(ctx, args.AppID, args.Method, args.HTTPVerb, content)
 	if err != nil {

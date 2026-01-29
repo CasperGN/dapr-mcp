@@ -9,6 +9,8 @@ import (
 
 	dapr "github.com/dapr/go-sdk/client"
 	"github.com/modelcontextprotocol/go-sdk/mcp"
+	"go.opentelemetry.io/otel"
+	"go.opentelemetry.io/otel/propagation"
 )
 
 type InvokeBindingArgs struct {
@@ -21,17 +23,28 @@ type InvokeBindingArgs struct {
 var daprClient dapr.Client
 
 func invokeOutputBindingTool(ctx context.Context, req *mcp.CallToolRequest, args InvokeBindingArgs) (*mcp.CallToolResult, any, error) {
+	ctx, span := otel.Tracer("daprmcp").Start(ctx, "invoke_binding")
+	defer span.End()
+
 	data := []byte(args.Data)
 
 	if args.Data == "" {
 		data = nil
 	}
 
+	// Merge user metadata with baggage
+	metadata := make(map[string]string)
+	for k, v := range args.Metadata {
+		metadata[k] = v
+	}
+	propagator := otel.GetTextMapPropagator()
+	propagator.Inject(ctx, propagation.MapCarrier(metadata))
+
 	bindingReq := &dapr.InvokeBindingRequest{
 		Name:      args.BindingName,
 		Operation: args.Operation,
 		Data:      data,
-		Metadata:  args.Metadata,
+		Metadata:  metadata,
 	}
 
 	resp, err := daprClient.InvokeBinding(ctx, bindingReq)

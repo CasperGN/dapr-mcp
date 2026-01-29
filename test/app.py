@@ -1,4 +1,3 @@
-#!/usr/bin/env python3
 import asyncio
 import logging
 
@@ -9,6 +8,8 @@ from dapr_agents.agents.configs import (
     AgentPubSubConfig,
     AgentRegistryConfig,
     AgentStateConfig,
+    AgentObservabilityConfig,
+    AgentTracingExporter,
 )
 from dapr_agents.memory import ConversationDaprStateMemory
 from dapr_agents.storage.daprstores.stateservice import StateStoreService
@@ -18,12 +19,12 @@ from dapr_agents.llm import DaprChatClient
 
 async def _load_mcp_tools() -> list:
     client = MCPClient()
-    await client.connect_sse("local", url="http://localhost:8080")
+    await client.connect_sse("local", url="http://localhost:8088")
     return client.get_all_tools()
 
 
 def main() -> None:
-    logging.basicConfig(level=logging.INFO)
+    logging.basicConfig(level=logging.DEBUG)
 
     try:
         tools = asyncio.run(_load_mcp_tools())
@@ -50,7 +51,7 @@ def main() -> None:
             "**Security Principle**: Pay careful attention to 'ReadOnlyHint' and 'DestructiveHint' in the tool schema to gauge the risk of the operation.",
             "Upon errors, parse the tool error and correct your request. Iterate like this until success. Do not ask for input."
         ],
-        llm=DaprChatClient(component_name='ollama'),
+        llm=DaprChatClient(component_name='llm-provider'),
         tools=tools,
         pubsub = AgentPubSubConfig(
             pubsub_name="messagepubsub",
@@ -70,6 +71,13 @@ def main() -> None:
                 store_name="agentstatestore",
                 session_id="agent-session",
             )
+        ),
+        agent_observability=AgentObservabilityConfig(
+            enabled=True,
+            tracing_enabled=True,
+            tracing_exporter=AgentTracingExporter.OTLP_GRPC,
+            endpoint="http://localhost:4317",
+            auth_token="your-secret-token-here"
         ),
     )
 

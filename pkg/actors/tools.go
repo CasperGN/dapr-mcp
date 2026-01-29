@@ -7,6 +7,7 @@ import (
 
 	dapr "github.com/dapr/go-sdk/client"
 	"github.com/modelcontextprotocol/go-sdk/mcp"
+	"go.opentelemetry.io/otel"
 )
 
 type InvokeActorMethodArgs struct {
@@ -19,6 +20,9 @@ type InvokeActorMethodArgs struct {
 var daprClient dapr.Client
 
 func invokeActorMethodTool(ctx context.Context, req *mcp.CallToolRequest, args InvokeActorMethodArgs) (*mcp.CallToolResult, any, error) {
+	ctx, span := otel.Tracer("daprmcp").Start(ctx, "invoke_actor")
+	defer span.End()
+
 	actorReq := &dapr.InvokeActorRequest{
 		ActorType: args.ActorType,
 		ActorID:   args.ActorID,

@@ -10,6 +10,7 @@ import (
 	dapr "github.com/dapr/go-sdk/client"
 	"github.com/google/uuid"
 	"github.com/modelcontextprotocol/go-sdk/mcp"
+	"go.opentelemetry.io/otel"
 	"google.golang.org/protobuf/types/known/anypb"
 )
 
@@ -23,6 +24,8 @@ type ConverseArgs struct {
 var daprClient dapr.Client
 
 func converseTool(ctx context.Context, req *mcp.CallToolRequest, args ConverseArgs) (*mcp.CallToolResult, any, error) {
+	ctx, span := otel.Tracer("daprmcp").Start(ctx, "converse")
+	defer span.End()
 
 	contextID := args.ContextID
 	if contextID == "" {

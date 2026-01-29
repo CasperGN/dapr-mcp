@@ -7,6 +7,9 @@ import (
 
 	dapr "github.com/dapr/go-sdk/client"
 	"github.com/modelcontextprotocol/go-sdk/mcp"
+	"go.opentelemetry.io/otel"
+	"go.opentelemetry.io/otel/attribute"
+	"go.opentelemetry.io/otel/propagation"
 )
 
 type PublishArgs struct {
@@ -18,11 +21,23 @@ type PublishArgs struct {
 var daprClient dapr.Client
 
 func publishEventTool(ctx context.Context, req *mcp.CallToolRequest, args PublishArgs) (*mcp.CallToolResult, any, error) {
+	ctx, span := otel.Tracer("daprmcp").Start(ctx, "publish_event")
+	defer span.End()
+	span.SetAttributes(
+		attribute.String("dapr.operation", "publish_event"),
+		attribute.String("dapr.pubsub", args.PubsubName),
+		attribute.String("dapr.topic", args.Topic),
+	)
 
 	data := []byte(args.Message)
 
+	propagator := otel.GetTextMapPropagator()
+	metadata := make(map[string]string)
+	propagator.Inject(ctx, propagation.MapCarrier(metadata))
+
 	opts := []dapr.PublishEventOption{
 		dapr.PublishEventWithContentType("application/json"),
+		dapr.PublishEventWithMetadata(metadata),
 	}
 
 	if err := daprClient.PublishEvent(ctx, args.PubsubName, args.Topic, data, opts...); err != nil {
@@ -56,6 +71,13 @@ type PublishWithMetadataArgs struct {
 }
 
 func publishEventWithMetadataTool(ctx context.Context, req *mcp.CallToolRequest, args PublishWithMetadataArgs) (*mcp.CallToolResult, any, error) {
+	ctx, span := otel.Tracer("daprmcp").Start(ctx, "publish_event_with_metadata")
+	defer span.End()
+	span.SetAttributes(
+		attribute.String("dapr.operation", "publish_event_with_metadata"),
+		attribute.String("dapr.pubsub", args.PubsubName),
+		attribute.String("dapr.topic", args.Topic),
+	)
 	data := []byte(args.Message)
 
 	opts := make([]dapr.PublishEventOption, 0)

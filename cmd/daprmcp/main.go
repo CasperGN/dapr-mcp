@@ -11,6 +11,13 @@ import (
 	"time"
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
+	"go.opentelemetry.io/otel"
+	"go.opentelemetry.io/otel/attribute"
+	"go.opentelemetry.io/otel/exporters/otlp/otlptrace/otlptracegrpc"
+	"go.opentelemetry.io/otel/exporters/otlp/otlptrace/otlptracehttp"
+	"go.opentelemetry.io/otel/propagation"
+	sdkresource "go.opentelemetry.io/otel/sdk/resource"
+	sdktrace "go.opentelemetry.io/otel/sdk/trace"
 
 	actor "github.com/CasperGN/daprmcp/pkg/actors"
 	binding "github.com/CasperGN/daprmcp/pkg/bindings"
@@ -53,6 +60,76 @@ func initializeDaprClient(ctx context.Context) error {
 
 func main() {
 	flag.Parse()
+
+	// Set up OpenTelemetry propagator for trace context and baggage
+	prop := propagation.NewCompositeTextMapPropagator(propagation.TraceContext{}, propagation.Baggage{})
+	otel.SetTextMapPropagator(prop)
+
+	// Set up OpenTelemetry exporter based on standard environment variables
+	protocol := os.Getenv("OTEL_EXPORTER_OTLP_TRACES_PROTOCOL")
+	if protocol == "" {
+		protocol = os.Getenv("OTEL_EXPORTER_OTLP_PROTOCOL")
+	}
+	if protocol == "" {
+		protocol = "grpc"
+	}
+	endpoint := os.Getenv("OTEL_EXPORTER_OTLP_TRACES_ENDPOINT")
+	if endpoint == "" {
+		endpoint = os.Getenv("OTEL_EXPORTER_OTLP_ENDPOINT")
+	}
+	headersStr := os.Getenv("OTEL_EXPORTER_OTLP_HEADERS")
+
+	if endpoint != "" {
+		ctx := context.Background()
+		var exporter sdktrace.SpanExporter
+		var err error
+		headers := make(map[string]string)
+		if headersStr != "" {
+			// Parse headers like "key1=value1,key2=value2"
+			for _, pair := range strings.Split(headersStr, ",") {
+				if kv := strings.SplitN(pair, "=", 2); len(kv) == 2 {
+					headers[strings.TrimSpace(kv[0])] = strings.TrimSpace(kv[1])
+				}
+			}
+		}
+		for h := range headers {
+			log.Printf("OTEL Header: %s: %s", h, headers[h])
+		}
+		switch protocol {
+		case "grpc":
+			// Strip http:// or https:// for gRPC
+			cleanEndpoint := strings.TrimPrefix(endpoint, "http://")
+			cleanEndpoint = strings.TrimPrefix(cleanEndpoint, "https://")
+			exporter, err = otlptracegrpc.New(ctx, otlptracegrpc.WithEndpoint(cleanEndpoint), otlptracegrpc.WithHeaders(headers))
+		case "http/protobuf":
+			// Ensure http:// prefix for HTTP
+			if !strings.HasPrefix(endpoint, "http://") && !strings.HasPrefix(endpoint, "https://") {
+				endpoint = "http://" + endpoint
+			}
+			exporter, err = otlptracehttp.New(ctx, otlptracehttp.WithEndpoint(endpoint), otlptracehttp.WithHeaders(headers))
+		case "http/json":
+			log.Printf("http/json protocol not supported, falling back to http/protobuf")
+			if !strings.HasPrefix(endpoint, "http://") && !strings.HasPrefix(endpoint, "https://") {
+				endpoint = "http://" + endpoint
+			}
+			exporter, err = otlptracehttp.New(ctx, otlptracehttp.WithEndpoint(endpoint), otlptracehttp.WithHeaders(headers))
+		default:
+			log.Printf("Unsupported protocol: %s", protocol)
+		}
+		if err != nil {
+			log.Printf("Failed to create exporter: %v", err)
+		} else {
+			resource := sdkresource.NewSchemaless(
+				attribute.String("service.name", "daprmcp"),
+				attribute.String("service.version", "v1.0.0"),
+			)
+			tp := sdktrace.NewTracerProvider(
+				sdktrace.WithBatcher(exporter),
+				sdktrace.WithResource(resource),
+			)
+			otel.SetTracerProvider(tp)
+		}
+	}
 
 	ctx := context.Background()
 
@@ -130,12 +207,25 @@ func main() {
 	}
 
 	if *httpAddr != "" {
-		handler := mcp.NewSSEHandler(func(request *http.Request) *mcp.Server {
-			log.Printf("Handling request for URL %s\n", request.URL.Path)
+		originalHandler := mcp.NewSSEHandler(func(request *http.Request) *mcp.Server {
 			return server
 		}, nil)
+		wrappedHandler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			if strings.HasPrefix(r.URL.Path, "/dapr/subscribe") {
+				w.Header().Set("Content-Type", "application/json")
+				w.Write([]byte(`[]`))
+				return
+			}
+			carrier := propagation.HeaderCarrier(r.Header)
+			ctx := prop.Extract(r.Context(), carrier)
+			// Inject baggage into response headers
+			prop.Inject(ctx, propagation.HeaderCarrier(w.Header()))
+			// Set the context with baggage in the request
+			r = r.WithContext(ctx)
+			originalHandler.ServeHTTP(w, r)
+		})
 		log.Printf("MCP handler listening at %s", *httpAddr)
-		log.Fatal(http.ListenAndServe(*httpAddr, handler))
+		log.Fatal(http.ListenAndServe(*httpAddr, wrappedHandler))
 	} else {
 		t := &mcp.LoggingTransport{Transport: &mcp.StdioTransport{}, Writer: os.Stderr}
 		if err := server.Run(context.Background(), t); err != nil {

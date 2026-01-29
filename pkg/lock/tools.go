@@ -8,6 +8,7 @@ import (
 
 	dapr "github.com/dapr/go-sdk/client"
 	"github.com/modelcontextprotocol/go-sdk/mcp"
+	"go.opentelemetry.io/otel"
 )
 
 type AcquireLockArgs struct {
@@ -26,6 +27,9 @@ type ReleaseLockArgs struct {
 var daprClient dapr.Client
 
 func acquireLockTool(ctx context.Context, req *mcp.CallToolRequest, args AcquireLockArgs) (*mcp.CallToolResult, any, error) {
+	ctx, span := otel.Tracer("daprmcp").Start(ctx, "acquire_lock")
+	defer span.End()
+
 	lockReq := &dapr.LockRequest{
 		LockOwner:       args.LockOwner,
 		ResourceID:      args.ResourceID,
@@ -68,6 +72,9 @@ func acquireLockTool(ctx context.Context, req *mcp.CallToolRequest, args Acquire
 }
 
 func releaseLockTool(ctx context.Context, req *mcp.CallToolRequest, args ReleaseLockArgs) (*mcp.CallToolResult, any, error) {
+	ctx, span := otel.Tracer("daprmcp").Start(ctx, "release_lock")
+	defer span.End()
+
 	unlockReq := &dapr.UnlockRequest{
 		LockOwner:  args.LockOwner,
 		ResourceID: args.ResourceID,

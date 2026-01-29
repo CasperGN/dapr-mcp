@@ -9,6 +9,7 @@ import (
 
 	dapr "github.com/dapr/go-sdk/client"
 	"github.com/modelcontextprotocol/go-sdk/mcp"
+	"go.opentelemetry.io/otel"
 )
 
 type EncryptArgs struct {
@@ -24,6 +25,9 @@ type DecryptArgs struct {
 var daprClient dapr.Client
 
 func encryptTool(ctx context.Context, req *mcp.CallToolRequest, args EncryptArgs) (*mcp.CallToolResult, any, error) {
+	ctx, span := otel.Tracer("daprmcp").Start(ctx, "encrypt")
+	defer span.End()
+
 	plainStream := strings.NewReader(args.PlainText)
 
 	encryptOpts := dapr.EncryptOptions{
@@ -68,6 +72,9 @@ func encryptTool(ctx context.Context, req *mcp.CallToolRequest, args EncryptArgs
 }
 
 func decryptTool(ctx context.Context, req *mcp.CallToolRequest, args DecryptArgs) (*mcp.CallToolResult, any, error) {
+	ctx, span := otel.Tracer("daprmcp").Start(ctx, "decrypt")
+	defer span.End()
+
 	cipherStream := strings.NewReader(args.CipherText)
 
 	decryptOpts := dapr.DecryptOptions{

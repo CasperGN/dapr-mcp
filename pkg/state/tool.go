@@ -7,6 +7,9 @@ import (
 
 	dapr "github.com/dapr/go-sdk/client"
 	"github.com/modelcontextprotocol/go-sdk/mcp"
+	"go.opentelemetry.io/otel"
+	"go.opentelemetry.io/otel/attribute"
+	"go.opentelemetry.io/otel/propagation"
 )
 
 type SaveStateArgs struct {
@@ -39,6 +42,14 @@ type ExecuteTransactionArgs struct {
 var daprClient dapr.Client
 
 func saveStateTool(ctx context.Context, req *mcp.CallToolRequest, args SaveStateArgs) (*mcp.CallToolResult, any, error) {
+	ctx, span := otel.Tracer("daprmcp").Start(ctx, "save_state")
+	defer span.End()
+	span.SetAttributes(
+		attribute.String("dapr.operation", "save_state"),
+		attribute.String("dapr.store", args.StoreName),
+		attribute.String("dapr.key", args.Key),
+	)
+
 	data := []byte(args.Value)
 
 	var err error
@@ -59,6 +70,14 @@ func saveStateTool(ctx context.Context, req *mcp.CallToolRequest, args SaveState
 }
 
 func getStateTool(ctx context.Context, req *mcp.CallToolRequest, args GetStateArgs) (*mcp.CallToolResult, any, error) {
+	ctx, span := otel.Tracer("daprmcp").Start(ctx, "get_state")
+	defer span.End()
+	span.SetAttributes(
+		attribute.String("dapr.operation", "get_state"),
+		attribute.String("dapr.store", args.StoreName),
+		attribute.String("dapr.key", args.Key),
+	)
+
 	item, err := daprClient.GetState(ctx, args.StoreName, args.Key, nil)
 	if err != nil {
 		log.Printf("Dapr GetState failed: %v", err)
@@ -93,6 +112,14 @@ func getStateTool(ctx context.Context, req *mcp.CallToolRequest, args GetStateAr
 }
 
 func deleteStateTool(ctx context.Context, req *mcp.CallToolRequest, args DeleteStateArgs) (*mcp.CallToolResult, any, error) {
+	ctx, span := otel.Tracer("daprmcp").Start(ctx, "delete_state")
+	defer span.End()
+	span.SetAttributes(
+		attribute.String("dapr.operation", "delete_state"),
+		attribute.String("dapr.store", args.StoreName),
+		attribute.String("dapr.key", args.Key),
+	)
+
 	if err := daprClient.DeleteState(ctx, args.StoreName, args.Key, nil); err != nil {
 		log.Printf("Dapr DeleteState failed: %v", err)
 		toolErrorMessage := fmt.Errorf("dapr DeleteState failed: %v", err).Error()
@@ -111,6 +138,18 @@ func deleteStateTool(ctx context.Context, req *mcp.CallToolRequest, args DeleteS
 }
 
 func executeTransactionTool(ctx context.Context, req *mcp.CallToolRequest, args ExecuteTransactionArgs) (*mcp.CallToolResult, any, error) {
+	ctx, span := otel.Tracer("daprmcp").Start(ctx, "execute_transaction")
+	defer span.End()
+	span.SetAttributes(
+		attribute.String("dapr.operation", "execute_transaction"),
+		attribute.String("dapr.store", args.StoreName),
+		attribute.Int("dapr.operations_count", len(args.Items)),
+	)
+
+	propagator := otel.GetTextMapPropagator()
+	meta := make(map[string]string)
+	propagator.Inject(ctx, propagation.MapCarrier(meta))
+
 	ops := make([]*dapr.StateOperation, 0)
 
 	for _, item := range args.Items {
@@ -134,7 +173,7 @@ func executeTransactionTool(ctx context.Context, req *mcp.CallToolRequest, args 
 		})
 	}
 
-	if err := daprClient.ExecuteStateTransaction(ctx, args.StoreName, nil, ops); err != nil {
+	if err := daprClient.ExecuteStateTransaction(ctx, args.StoreName, meta, ops); err != nil {
 		log.Printf("Dapr ExecuteStateTransaction failed: %v", err)
 		toolErrorMessage := fmt.Errorf("dapr ExecuteStateTransaction failed: %v", err).Error()
 		return &mcp.CallToolResult{

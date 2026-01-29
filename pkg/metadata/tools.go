@@ -8,6 +8,7 @@ import (
 
 	dapr "github.com/dapr/go-sdk/client"
 	"github.com/modelcontextprotocol/go-sdk/mcp"
+	"go.opentelemetry.io/otel"
 )
 
 type ComponentListWrapper struct {
@@ -26,6 +27,9 @@ var (
 )
 
 func GetLiveComponentList(ctx context.Context, client dapr.Client) ([]ComponentInfo, error) {
+	ctx, span := otel.Tracer("daprmcp").Start(ctx, "get_components")
+	defer span.End()
+
 	metadata, err := client.GetMetadata(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("failed to fetch Dapr metadata: %w", err)

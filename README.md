@@ -1,7 +1,7 @@
 # dapr-mcp
 MCP Server for Dapr APIs
 
-## Status
+## Tool Status
 
 As this project is still very much WIP, below you'll find the relevant status of the tools
 
@@ -25,6 +25,56 @@ As this project is still very much WIP, below you'll find the relevant status of
 | state | delete_state | Functional | | Delete the saved file |
 | state | execute_transaction | Functional | | Atomically save all files under .github/workflows with dapr |
 
+## OpenTelemetry
+
+This MCP server implements comprehensive OpenTelemetry tracing and baggage propagation. It extracts `traceparent` and `baggage` headers from incoming requests, creates child spans for each tool operation, and injects baggage back into responses. All spans include relevant Dapr operation attributes for better observability.
+
+### Environment Variables
+
+Configure OTEL export by setting the following environment variables:
+
+#### Required
+- `OTEL_EXPORTER_OTLP_TRACES_ENDPOINT` or `OTEL_EXPORTER_OTLP_ENDPOINT`: The OTLP endpoint URL for your tracing backend
+  - For gRPC: `http://localhost:4317` (note: no `grpc://` prefix)
+  - For HTTP: `http://localhost:4318/v1/traces`
+
+#### Optional
+- `OTEL_EXPORTER_OTLP_TRACES_PROTOCOL` or `OTEL_EXPORTER_OTLP_PROTOCOL`: Protocol to use (`grpc`, `http/protobuf`, `http/json`)
+  - Defaults to `grpc` if not specified
+- `OTEL_EXPORTER_OTLP_HEADERS`: Additional headers for authentication (e.g., `authorization=Bearer your-token`)
+- `OTEL_SERVICE_NAME`: Override the default service name (`daprmcp`)
+- `OTEL_SERVICE_VERSION`: Override the default service version (`v1.0.0`)
+
+### Examples
+
+**Jaeger (gRPC):**
+```bash
+export OTEL_EXPORTER_OTLP_TRACES_ENDPOINT=http://localhost:4317
+export OTEL_EXPORTER_OTLP_TRACES_PROTOCOL=grpc
+```
+
+**Jaeger (HTTP):**
+```bash
+export OTEL_EXPORTER_OTLP_TRACES_ENDPOINT=http://localhost:4318/v1/traces
+export OTEL_EXPORTER_OTLP_TRACES_PROTOCOL=http/protobuf
+```
+
+**With Authentication:**
+```bash
+export OTEL_EXPORTER_OTLP_TRACES_ENDPOINT=https://localhost:443
+export OTEL_EXPORTER_OTLP_HEADERS="authorization=Bearer your-token"
+```
+
+### Span Attributes
+
+Each tool span includes relevant attributes:
+- `dapr.operation`: The Dapr operation type (e.g., `save_state`, `publish_event`)
+- `dapr.store`: State store name (for state operations)
+- `dapr.key`: State key (for state operations)
+- `dapr.pubsub`: PubSub component name (for pubsub operations)
+- `dapr.topic`: Topic name (for pubsub operations)
+- `dapr.operations_count`: Number of operations (for transactions)
+
 ## Run locally
 
 Setup:
@@ -32,12 +82,7 @@ Setup:
 dapr init
 ```
 
-You'll need 4 terminals:
-
-Terminal 1:
-```shell
-python3 -m http.server 8000
-```
+You'll need 3 terminals:
 
 Terminal 2:
 ```shell
