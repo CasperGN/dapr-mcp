@@ -11,6 +11,11 @@ import (
 	"go.opentelemetry.io/otel"
 )
 
+// MetadataClient defines the interface for metadata operations.
+type MetadataClient interface {
+	GetMetadata(ctx context.Context) (*dapr.GetMetadataResponse, error)
+}
+
 type ComponentListWrapper struct {
 	Components []ComponentInfo `json:"components" jsonschema:"A list of Dapr components found in the sidecar."`
 }
@@ -22,12 +27,10 @@ type ComponentInfo struct {
 	Capabilities []string `json:"capabilities" jsonschema:"The capabilities of the Component."`
 }
 
-var (
-	daprClient dapr.Client
-)
+var metadataClient MetadataClient
 
-func GetLiveComponentList(ctx context.Context, client dapr.Client) ([]ComponentInfo, error) {
-	ctx, span := otel.Tracer("daprmcp").Start(ctx, "get_components")
+func GetLiveComponentList(ctx context.Context, client MetadataClient) ([]ComponentInfo, error) {
+	ctx, span := otel.Tracer("dapr-mcp-server").Start(ctx, "get_components")
 	defer span.End()
 
 	metadata, err := client.GetMetadata(ctx)
@@ -66,7 +69,7 @@ func getMetadataTool(ctx context.Context, req *mcp.CallToolRequest, args any) (
 	ComponentListWrapper,
 	error,
 ) {
-	if daprClient == nil {
+	if metadataClient == nil {
 		toolErrorMessage := "Dapr client not initialized on the server side."
 		return &mcp.CallToolResult{
 			Content: []mcp.Content{&mcp.TextContent{Text: toolErrorMessage}},
@@ -75,7 +78,7 @@ func getMetadataTool(ctx context.Context, req *mcp.CallToolRequest, args any) (
 	}
 	log.Printf("Request: %v", req)
 
-	components, err := GetLiveComponentList(ctx, daprClient)
+	components, err := GetLiveComponentList(ctx, metadataClient)
 	if err != nil {
 		log.Printf("Error calling getMetadataTool: %v", err)
 		toolErrorMessage := fmt.Sprintf("Error fetching live Dapr component list: %v", err)
@@ -97,8 +100,8 @@ func getMetadataTool(ctx context.Context, req *mcp.CallToolRequest, args any) (
 	}, wrapper, nil
 }
 
-func RegisterTools(server *mcp.Server, client dapr.Client) {
-	daprClient = client
+func RegisterTools(server *mcp.Server, client MetadataClient) {
+	metadataClient = client
 
 	mcp.AddTool(server, &mcp.Tool{
 		Name:        "get_components",

@@ -4,6 +4,7 @@ metadata:
   name: ollama
 spec:
   type: conversation.openai
+  version: v1
   metadata:
   - name: key
     value: 'ollama'

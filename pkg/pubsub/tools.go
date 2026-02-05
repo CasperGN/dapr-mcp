@@ -12,16 +12,21 @@ import (
 	"go.opentelemetry.io/otel/propagation"
 )
 
+// PubSubClient defines the interface for pub/sub operations.
+type PubSubClient interface {
+	PublishEvent(ctx context.Context, pubsubName, topicName string, data interface{}, opts ...dapr.PublishEventOption) error
+}
+
 type PublishArgs struct {
 	PubsubName string `json:"pubsubName" jsonschema:"The name of the Dapr pubsub component (e.g., 'pubsub')."`
 	Topic      string `json:"topic" jsonschema:"The topic to publish the message to (e.g., 'orders')."`
 	Message    string `json:"message" jsonschema:"The message payload to publish, typically a JSON string."`
 }
 
-var daprClient dapr.Client
+var pubsubClient PubSubClient
 
 func publishEventTool(ctx context.Context, req *mcp.CallToolRequest, args PublishArgs) (*mcp.CallToolResult, any, error) {
-	ctx, span := otel.Tracer("daprmcp").Start(ctx, "publish_event")
+	ctx, span := otel.Tracer("dapr-mcp-server").Start(ctx, "publish_event")
 	defer span.End()
 	span.SetAttributes(
 		attribute.String("dapr.operation", "publish_event"),
@@ -40,7 +45,7 @@ func publishEventTool(ctx context.Context, req *mcp.CallToolRequest, args Publis
 		dapr.PublishEventWithMetadata(metadata),
 	}
 
-	if err := daprClient.PublishEvent(ctx, args.PubsubName, args.Topic, data, opts...); err != nil {
+	if err := pubsubClient.PublishEvent(ctx, args.PubsubName, args.Topic, data, opts...); err != nil {
 		log.Printf("Dapr PublishEvent failed: %v", err)
 		return &mcp.CallToolResult{
 			Content: []mcp.Content{&mcp.TextContent{
@@ -71,7 +76,7 @@ type PublishWithMetadataArgs struct {
 }
 
 func publishEventWithMetadataTool(ctx context.Context, req *mcp.CallToolRequest, args PublishWithMetadataArgs) (*mcp.CallToolResult, any, error) {
-	ctx, span := otel.Tracer("daprmcp").Start(ctx, "publish_event_with_metadata")
+	ctx, span := otel.Tracer("dapr-mcp-server").Start(ctx, "publish_event_with_metadata")
 	defer span.End()
 	span.SetAttributes(
 		attribute.String("dapr.operation", "publish_event_with_metadata"),
@@ -86,7 +91,7 @@ func publishEventWithMetadataTool(ctx context.Context, req *mcp.CallToolRequest,
 	}
 	opts = append(opts, dapr.PublishEventWithContentType("application/json"))
 
-	if err := daprClient.PublishEvent(ctx, args.PubsubName, args.Topic, data, opts...); err != nil {
+	if err := pubsubClient.PublishEvent(ctx, args.PubsubName, args.Topic, data, opts...); err != nil {
 		log.Printf("Dapr PublishEventWithMetadata failed: %v", err)
 		toolErrorMessage := fmt.Sprintf("failed to publish event to topic '%s' on pubsub '%s' with metadata. Dapr Error: %v", args.Topic, args.PubsubName, err)
 		return &mcp.CallToolResult{
@@ -110,8 +115,8 @@ func publishEventWithMetadataTool(ctx context.Context, req *mcp.CallToolRequest,
 	}, structuredResult, nil
 }
 
-func RegisterTools(server *mcp.Server, client dapr.Client) {
-	daprClient = client
+func RegisterTools(server *mcp.Server, client PubSubClient) {
+	pubsubClient = client
 
 	notDestructive := false
 	notIdempotent := false

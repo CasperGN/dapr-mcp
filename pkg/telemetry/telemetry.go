@@ -1,0 +1,262 @@
+// Package telemetry provides OpenTelemetry initialization and configuration.
+package telemetry
+
+import (
+	"context"
+	"log/slog"
+	"os"
+	"strings"
+
+	"go.opentelemetry.io/otel"
+	"go.opentelemetry.io/otel/attribute"
+	"go.opentelemetry.io/otel/exporters/otlp/otlpmetric/otlpmetricgrpc"
+	"go.opentelemetry.io/otel/exporters/otlp/otlptrace/otlptracegrpc"
+	"go.opentelemetry.io/otel/exporters/otlp/otlptrace/otlptracehttp"
+	"go.opentelemetry.io/otel/propagation"
+	sdkmetric "go.opentelemetry.io/otel/sdk/metric"
+	sdkresource "go.opentelemetry.io/otel/sdk/resource"
+	sdktrace "go.opentelemetry.io/otel/sdk/trace"
+)
+
+// Config holds the telemetry configuration.
+type Config struct {
+	ServiceName    string
+	ServiceVersion string
+	Endpoint       string
+	Protocol       string // "grpc" or "http/protobuf"
+	Headers        map[string]string
+	MetricsEnabled bool
+	LogsEnabled    bool
+}
+
+// Telemetry holds the telemetry providers.
+type Telemetry struct {
+	TracerProvider *sdktrace.TracerProvider
+	MeterProvider  *sdkmetric.MeterProvider
+	Logger         *slog.Logger
+	shutdown       []func(context.Context) error
+}
+
+// DefaultConfig returns a configuration from environment variables.
+func DefaultConfig() Config {
+	protocol := os.Getenv("OTEL_EXPORTER_OTLP_TRACES_PROTOCOL")
+	if protocol == "" {
+		protocol = os.Getenv("OTEL_EXPORTER_OTLP_PROTOCOL")
+	}
+	if protocol == "" {
+		protocol = "grpc"
+	}
+
+	endpoint := os.Getenv("OTEL_EXPORTER_OTLP_TRACES_ENDPOINT")
+	if endpoint == "" {
+		endpoint = os.Getenv("OTEL_EXPORTER_OTLP_ENDPOINT")
+	}
+
+	headersStr := os.Getenv("OTEL_EXPORTER_OTLP_HEADERS")
+	headers := parseHeaders(headersStr)
+
+	serviceName := os.Getenv("OTEL_SERVICE_NAME")
+	if serviceName == "" {
+		serviceName = "dapr-mcp-server"
+	}
+
+	serviceVersion := os.Getenv("OTEL_SERVICE_VERSION")
+	if serviceVersion == "" {
+		serviceVersion = "v1.0.0"
+	}
+
+	metricsEnabled := os.Getenv("DAPR_MCP_SERVER_METRICS_ENABLED") != "false"
+	logsEnabled := os.Getenv("DAPR_MCP_SERVER_LOGS_OTEL_ENABLED") != "false"
+
+	return Config{
+		ServiceName:    serviceName,
+		ServiceVersion: serviceVersion,
+		Endpoint:       endpoint,
+		Protocol:       protocol,
+		Headers:        headers,
+		MetricsEnabled: metricsEnabled,
+		LogsEnabled:    logsEnabled,
+	}
+}
+
+// parseHeaders parses the OTEL_EXPORTER_OTLP_HEADERS format.
+func parseHeaders(headersStr string) map[string]string {
+	headers := make(map[string]string)
+	if headersStr == "" {
+		return headers
+	}
+	for _, pair := range strings.Split(headersStr, ",") {
+		if kv := strings.SplitN(pair, "=", 2); len(kv) == 2 {
+			headers[strings.TrimSpace(kv[0])] = strings.TrimSpace(kv[1])
+		}
+	}
+	return headers
+}
+
+// Init initializes OpenTelemetry with the given configuration.
+func Init(ctx context.Context, cfg Config) (*Telemetry, error) {
+	t := &Telemetry{
+		shutdown: make([]func(context.Context) error, 0),
+	}
+
+	// Set up propagator
+	prop := propagation.NewCompositeTextMapPropagator(
+		propagation.TraceContext{},
+		propagation.Baggage{},
+	)
+	otel.SetTextMapPropagator(prop)
+
+	// Create resource
+	resource := sdkresource.NewSchemaless(
+		attribute.String("service.name", cfg.ServiceName),
+		attribute.String("service.version", cfg.ServiceVersion),
+	)
+
+	// Initialize logger
+	t.Logger = initLogger(cfg)
+
+	if cfg.Endpoint == "" {
+		t.Logger.Info("OTEL endpoint not configured, telemetry disabled")
+		return t, nil
+	}
+
+	// Initialize tracer
+	if err := t.initTracer(ctx, cfg, resource); err != nil {
+		return nil, err
+	}
+
+	// Initialize metrics
+	if cfg.MetricsEnabled {
+		if err := t.initMetrics(ctx, cfg, resource); err != nil {
+			t.Logger.Warn("failed to initialize metrics", "error", err)
+		}
+	}
+
+	return t, nil
+}
+
+// initTracer initializes the trace provider.
+func (t *Telemetry) initTracer(ctx context.Context, cfg Config, resource *sdkresource.Resource) error {
+	var exporter sdktrace.SpanExporter
+	var err error
+
+	switch cfg.Protocol {
+	case "grpc":
+		cleanEndpoint := strings.TrimPrefix(cfg.Endpoint, "http://")
+		cleanEndpoint = strings.TrimPrefix(cleanEndpoint, "https://")
+		exporter, err = otlptracegrpc.New(ctx,
+			otlptracegrpc.WithEndpoint(cleanEndpoint),
+			otlptracegrpc.WithHeaders(cfg.Headers),
+			otlptracegrpc.WithInsecure(),
+		)
+	case "http/protobuf", "http/json":
+		endpoint := cfg.Endpoint
+		if !strings.HasPrefix(endpoint, "http://") && !strings.HasPrefix(endpoint, "https://") {
+			endpoint = "http://" + endpoint
+		}
+		exporter, err = otlptracehttp.New(ctx,
+			otlptracehttp.WithEndpoint(endpoint),
+			otlptracehttp.WithHeaders(cfg.Headers),
+		)
+	default:
+		t.Logger.Warn("unsupported OTEL protocol, defaulting to grpc", "protocol", cfg.Protocol)
+		cleanEndpoint := strings.TrimPrefix(cfg.Endpoint, "http://")
+		cleanEndpoint = strings.TrimPrefix(cleanEndpoint, "https://")
+		exporter, err = otlptracegrpc.New(ctx,
+			otlptracegrpc.WithEndpoint(cleanEndpoint),
+			otlptracegrpc.WithHeaders(cfg.Headers),
+			otlptracegrpc.WithInsecure(),
+		)
+	}
+
+	if err != nil {
+		return err
+	}
+
+	t.TracerProvider = sdktrace.NewTracerProvider(
+		sdktrace.WithBatcher(exporter),
+		sdktrace.WithResource(resource),
+	)
+	otel.SetTracerProvider(t.TracerProvider)
+
+	t.shutdown = append(t.shutdown, t.TracerProvider.Shutdown)
+	t.Logger.Info("tracer initialized", "endpoint", cfg.Endpoint, "protocol", cfg.Protocol)
+
+	return nil
+}
+
+// initMetrics initializes the metrics provider.
+func (t *Telemetry) initMetrics(ctx context.Context, cfg Config, resource *sdkresource.Resource) error {
+	metricsEndpoint := os.Getenv("OTEL_EXPORTER_OTLP_METRICS_ENDPOINT")
+	if metricsEndpoint == "" {
+		metricsEndpoint = cfg.Endpoint
+	}
+
+	cleanEndpoint := strings.TrimPrefix(metricsEndpoint, "http://")
+	cleanEndpoint = strings.TrimPrefix(cleanEndpoint, "https://")
+
+	exporter, err := otlpmetricgrpc.New(ctx,
+		otlpmetricgrpc.WithEndpoint(cleanEndpoint),
+		otlpmetricgrpc.WithHeaders(cfg.Headers),
+		otlpmetricgrpc.WithInsecure(),
+	)
+	if err != nil {
+		return err
+	}
+
+	t.MeterProvider = sdkmetric.NewMeterProvider(
+		sdkmetric.WithResource(resource),
+		sdkmetric.WithReader(sdkmetric.NewPeriodicReader(exporter)),
+	)
+	otel.SetMeterProvider(t.MeterProvider)
+
+	t.shutdown = append(t.shutdown, t.MeterProvider.Shutdown)
+	t.Logger.Info("metrics initialized", "endpoint", metricsEndpoint)
+
+	return nil
+}
+
+// initLogger initializes the structured logger.
+func initLogger(cfg Config) *slog.Logger {
+	level := slog.LevelInfo
+	switch strings.ToUpper(os.Getenv("DAPR_MCP_SERVER_LOG_LEVEL")) {
+	case "DEBUG":
+		level = slog.LevelDebug
+	case "WARN", "WARNING":
+		level = slog.LevelWarn
+	case "ERROR":
+		level = slog.LevelError
+	}
+
+	opts := &slog.HandlerOptions{
+		Level: level,
+	}
+
+	handler := slog.NewJSONHandler(os.Stdout, opts)
+	return slog.New(handler).With(
+		"service", cfg.ServiceName,
+		"version", cfg.ServiceVersion,
+	)
+}
+
+// Shutdown gracefully shuts down all telemetry components.
+func (t *Telemetry) Shutdown(ctx context.Context) error {
+	var lastErr error
+	for _, fn := range t.shutdown {
+		if err := fn(ctx); err != nil {
+			lastErr = err
+			t.Logger.Error("shutdown error", "error", err)
+		}
+	}
+	return lastErr
+}
+
+// Initialize initializes OpenTelemetry with default configuration and returns a shutdown function.
+func Initialize(ctx context.Context) (func(context.Context) error, error) {
+	cfg := DefaultConfig()
+	t, err := Init(ctx, cfg)
+	if err != nil {
+		return nil, err
+	}
+	return t.Shutdown, nil
+}

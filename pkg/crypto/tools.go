@@ -12,6 +12,12 @@ import (
 	"go.opentelemetry.io/otel"
 )
 
+// CryptoClient defines the interface for cryptography operations.
+type CryptoClient interface {
+	Encrypt(ctx context.Context, data io.Reader, opts dapr.EncryptOptions) (io.Reader, error)
+	Decrypt(ctx context.Context, data io.Reader, opts dapr.DecryptOptions) (io.Reader, error)
+}
+
 type EncryptArgs struct {
 	ComponentName string `json:"componentName" jsonschema:"The name of the Dapr Cryptography component."`
 	PlainText     string `json:"plainText" jsonschema:"The plain text message to be encrypted."`
@@ -22,10 +28,10 @@ type DecryptArgs struct {
 	CipherText    string `json:"cipherText" jsonschema:"The base64-encoded encrypted message to be decrypted."`
 }
 
-var daprClient dapr.Client
+var cryptoClient CryptoClient
 
 func encryptTool(ctx context.Context, req *mcp.CallToolRequest, args EncryptArgs) (*mcp.CallToolResult, any, error) {
-	ctx, span := otel.Tracer("daprmcp").Start(ctx, "encrypt")
+	ctx, span := otel.Tracer("dapr-mcp-server").Start(ctx, "encrypt")
 	defer span.End()
 
 	plainStream := strings.NewReader(args.PlainText)
@@ -36,7 +42,7 @@ func encryptTool(ctx context.Context, req *mcp.CallToolRequest, args EncryptArgs
 		KeyWrapAlgorithm: "RSA",
 	}
 
-	cipherStream, err := daprClient.Encrypt(ctx, plainStream, encryptOpts)
+	cipherStream, err := cryptoClient.Encrypt(ctx, plainStream, encryptOpts)
 	if err != nil {
 		log.Printf("Dapr Encrypt failed: %v", err)
 		toolErrorMessage := fmt.Errorf("dapr Encrypt failed: %w", err).Error()
@@ -72,7 +78,7 @@ func encryptTool(ctx context.Context, req *mcp.CallToolRequest, args EncryptArgs
 }
 
 func decryptTool(ctx context.Context, req *mcp.CallToolRequest, args DecryptArgs) (*mcp.CallToolResult, any, error) {
-	ctx, span := otel.Tracer("daprmcp").Start(ctx, "decrypt")
+	ctx, span := otel.Tracer("dapr-mcp-server").Start(ctx, "decrypt")
 	defer span.End()
 
 	cipherStream := strings.NewReader(args.CipherText)
@@ -82,7 +88,7 @@ func decryptTool(ctx context.Context, req *mcp.CallToolRequest, args DecryptArgs
 		KeyName:       "rsa-private-key.pem",
 	}
 
-	plainStream, err := daprClient.Decrypt(ctx, cipherStream, decryptOpts)
+	plainStream, err := cryptoClient.Decrypt(ctx, cipherStream, decryptOpts)
 	if err != nil {
 		log.Printf("Dapr Decrypt failed: %v", err)
 		toolErrorMessage := fmt.Errorf("dapr Decrypt failed: %v", err).Error()
@@ -118,8 +124,8 @@ func decryptTool(ctx context.Context, req *mcp.CallToolRequest, args DecryptArgs
 	}, structuredResult, nil
 }
 
-func RegisterTools(server *mcp.Server, client dapr.Client) {
-	daprClient = client
+func RegisterTools(server *mcp.Server, client CryptoClient) {
+	cryptoClient = client
 
 	// Encrypt Annotations
 	notIdempotent := false

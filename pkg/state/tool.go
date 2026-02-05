@@ -12,6 +12,15 @@ import (
 	"go.opentelemetry.io/otel/propagation"
 )
 
+// StateClient defines the interface for state operations.
+// This allows for easier testing with mocks.
+type StateClient interface {
+	SaveState(ctx context.Context, storeName, key string, data []byte, meta map[string]string, so ...dapr.StateOption) error
+	GetState(ctx context.Context, storeName, key string, meta map[string]string) (*dapr.StateItem, error)
+	DeleteState(ctx context.Context, storeName, key string, meta map[string]string) error
+	ExecuteStateTransaction(ctx context.Context, storeName string, meta map[string]string, ops []*dapr.StateOperation) error
+}
+
 type SaveStateArgs struct {
 	StoreName string `json:"storeName" jsonschema:"The name of the Dapr state store component (e.g., 'statestore')."`
 	Key       string `json:"key" jsonschema:"The key under which to save the state."`
@@ -39,10 +48,10 @@ type ExecuteTransactionArgs struct {
 	Items     []TransactionItem `json:"items" jsonschema:"A list of save and/or delete operations to execute atomically."`
 }
 
-var daprClient dapr.Client
+var stateClient StateClient
 
 func saveStateTool(ctx context.Context, req *mcp.CallToolRequest, args SaveStateArgs) (*mcp.CallToolResult, any, error) {
-	ctx, span := otel.Tracer("daprmcp").Start(ctx, "save_state")
+	ctx, span := otel.Tracer("dapr-mcp-server").Start(ctx, "save_state")
 	defer span.End()
 	span.SetAttributes(
 		attribute.String("dapr.operation", "save_state"),
@@ -54,7 +63,7 @@ func saveStateTool(ctx context.Context, req *mcp.CallToolRequest, args SaveState
 
 	var err error
 
-	if err = daprClient.SaveState(ctx, args.StoreName, args.Key, data, nil); err == nil {
+	if err = stateClient.SaveState(ctx, args.StoreName, args.Key, data, nil); err == nil {
 		successMessage := fmt.Sprintf("Successfully saved key '%s' to state store '%s'.", args.Key, args.StoreName)
 		log.Println(successMessage)
 		return &mcp.CallToolResult{
@@ -70,7 +79,7 @@ func saveStateTool(ctx context.Context, req *mcp.CallToolRequest, args SaveState
 }
 
 func getStateTool(ctx context.Context, req *mcp.CallToolRequest, args GetStateArgs) (*mcp.CallToolResult, any, error) {
-	ctx, span := otel.Tracer("daprmcp").Start(ctx, "get_state")
+	ctx, span := otel.Tracer("dapr-mcp-server").Start(ctx, "get_state")
 	defer span.End()
 	span.SetAttributes(
 		attribute.String("dapr.operation", "get_state"),
@@ -78,7 +87,7 @@ func getStateTool(ctx context.Context, req *mcp.CallToolRequest, args GetStateAr
 		attribute.String("dapr.key", args.Key),
 	)
 
-	item, err := daprClient.GetState(ctx, args.StoreName, args.Key, nil)
+	item, err := stateClient.GetState(ctx, args.StoreName, args.Key, nil)
 	if err != nil {
 		log.Printf("Dapr GetState failed: %v", err)
 		toolErrorMessage := fmt.Errorf("dapr GetState failed: %v", err).Error()
@@ -112,7 +121,7 @@ func getStateTool(ctx context.Context, req *mcp.CallToolRequest, args GetStateAr
 }
 
 func deleteStateTool(ctx context.Context, req *mcp.CallToolRequest, args DeleteStateArgs) (*mcp.CallToolResult, any, error) {
-	ctx, span := otel.Tracer("daprmcp").Start(ctx, "delete_state")
+	ctx, span := otel.Tracer("dapr-mcp-server").Start(ctx, "delete_state")
 	defer span.End()
 	span.SetAttributes(
 		attribute.String("dapr.operation", "delete_state"),
@@ -120,7 +129,7 @@ func deleteStateTool(ctx context.Context, req *mcp.CallToolRequest, args DeleteS
 		attribute.String("dapr.key", args.Key),
 	)
 
-	if err := daprClient.DeleteState(ctx, args.StoreName, args.Key, nil); err != nil {
+	if err := stateClient.DeleteState(ctx, args.StoreName, args.Key, nil); err != nil {
 		log.Printf("Dapr DeleteState failed: %v", err)
 		toolErrorMessage := fmt.Errorf("dapr DeleteState failed: %v", err).Error()
 		return &mcp.CallToolResult{
@@ -138,7 +147,7 @@ func deleteStateTool(ctx context.Context, req *mcp.CallToolRequest, args DeleteS
 }
 
 func executeTransactionTool(ctx context.Context, req *mcp.CallToolRequest, args ExecuteTransactionArgs) (*mcp.CallToolResult, any, error) {
-	ctx, span := otel.Tracer("daprmcp").Start(ctx, "execute_transaction")
+	ctx, span := otel.Tracer("dapr-mcp-server").Start(ctx, "execute_transaction")
 	defer span.End()
 	span.SetAttributes(
 		attribute.String("dapr.operation", "execute_transaction"),
@@ -150,7 +159,7 @@ func executeTransactionTool(ctx context.Context, req *mcp.CallToolRequest, args 
 	meta := make(map[string]string)
 	propagator.Inject(ctx, propagation.MapCarrier(meta))
 
-	ops := make([]*dapr.StateOperation, 0)
+	ops := make([]*dapr.StateOperation, 0, len(args.Items))
 
 	for _, item := range args.Items {
 		var opType dapr.OperationType
@@ -173,7 +182,7 @@ func executeTransactionTool(ctx context.Context, req *mcp.CallToolRequest, args 
 		})
 	}
 
-	if err := daprClient.ExecuteStateTransaction(ctx, args.StoreName, meta, ops); err != nil {
+	if err := stateClient.ExecuteStateTransaction(ctx, args.StoreName, meta, ops); err != nil {
 		log.Printf("Dapr ExecuteStateTransaction failed: %v", err)
 		toolErrorMessage := fmt.Errorf("dapr ExecuteStateTransaction failed: %v", err).Error()
 		return &mcp.CallToolResult{
@@ -190,8 +199,8 @@ func executeTransactionTool(ctx context.Context, req *mcp.CallToolRequest, args 
 	}, map[string]interface{}{"operations_executed": len(args.Items), "store_name": args.StoreName}, nil
 }
 
-func RegisterTools(server *mcp.Server, client dapr.Client) {
-	daprClient = client
+func RegisterTools(server *mcp.Server, client StateClient) {
+	stateClient = client
 
 	isReadOnly := true
 	isIdempotent := true

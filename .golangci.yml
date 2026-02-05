@@ -1,0 +1,61 @@
+version: "2"
+
+run:
+  timeout: 5m
+  modules-download-mode: readonly
+
+linters:
+  enable:
+    - errcheck
+    - govet
+    - staticcheck
+    - gosec
+    - ineffassign
+    - unused
+    - misspell
+    - unconvert
+    - prealloc
+  disable:
+    - depguard
+
+formatters:
+  enable:
+    - gofmt
+    - goimports
+  settings:
+    goimports:
+      local-prefixes:
+        - github.com/dapr/dapr-mcp-server
+
+linters-settings:
+  errcheck:
+    check-type-assertions: true
+    check-blank: false
+  gosec:
+    excludes:
+      - G104 # Audit errors not checked - we handle this with errcheck
+  govet:
+    enable-all: true
+    disable:
+      - fieldalignment # Too noisy for this project
+  misspell:
+    locale: US
+
+issues:
+  exclude-rules:
+    # Exclude some linters from running on tests files.
+    - path: _test\.go
+      linters:
+        - gosec
+        - errcheck
+    # Exclude linters for mock files
+    - path: mocks/
+      linters:
+        - unused
+  max-issues-per-linter: 50
+  max-same-issues: 10
+
+output:
+  formats:
+    colored-line-number: {}
+  sort-results: true

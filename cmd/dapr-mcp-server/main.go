@@ -197,7 +197,7 @@ func main() {
 
 	if *httpAddr != "" {
 		// Initialize health checker
-		healthChecker := health.NewChecker(DaprClient, logger)
+		healthChecker := health.NewHandler(DaprClient, Version)
 
 		// Initialize authentication
 		authConfig := auth.DefaultConfig()
@@ -208,6 +208,7 @@ func main() {
 
 		var authMiddleware func(http.Handler) http.Handler
 		if authConfig.Enabled && authConfig.Mode != auth.ModeDisabled {
+			logger.Info("Starting authentication initialization", "mode", authConfig.Mode)
 			authenticators, err := buildAuthenticators(ctx, authConfig, logger)
 			if err != nil {
 				logger.Error("Failed to initialize authenticators", "error", err)
@@ -283,6 +284,10 @@ func buildAuthenticators(ctx context.Context, cfg auth.Config, logger *slog.Logg
 
 	switch cfg.Mode {
 	case auth.ModeOIDC:
+		logger.Info("Initializing OIDC authenticator",
+			"issuer_url", cfg.OIDC.IssuerURL,
+			"client_id", cfg.OIDC.ClientID,
+		)
 		oidc, err := auth.NewOIDCAuthenticator(ctx, cfg.OIDC)
 		if err != nil {
 			return nil, fmt.Errorf("failed to create OIDC authenticator: %w", err)
@@ -290,14 +295,36 @@ func buildAuthenticators(ctx context.Context, cfg auth.Config, logger *slog.Logg
 		authenticators = append(authenticators, oidc)
 
 	case auth.ModeSPIFFE:
+		logger.Info("Initializing SPIFFE authenticator",
+			"trust_domain", cfg.SPIFFE.TrustDomain,
+			"server_id", cfg.SPIFFE.ServerID,
+			"endpoint_socket", cfg.SPIFFE.EndpointSocket,
+		)
 		spiffe, err := auth.NewSPIFFEAuthenticator(ctx, cfg.SPIFFE)
 		if err != nil {
 			return nil, fmt.Errorf("failed to create SPIFFE authenticator: %w", err)
 		}
 		authenticators = append(authenticators, spiffe)
 
+	case auth.ModeDaprSentry:
+		logger.Info("Initializing Dapr Sentry authenticator",
+			"jwks_url", cfg.DaprSentry.JWKSUrl,
+			"trust_domain", cfg.DaprSentry.TrustDomain,
+			"audience", cfg.DaprSentry.Audience,
+			"token_header", cfg.DaprSentry.TokenHeader,
+		)
+		sentry, err := auth.NewDaprSentryAuthenticatorWithLogger(ctx, cfg.DaprSentry, logger)
+		if err != nil {
+			return nil, fmt.Errorf("failed to create Dapr Sentry authenticator: %w", err)
+		}
+		authenticators = append(authenticators, sentry)
+
 	case auth.ModeHybrid:
 		if cfg.OIDC.Enabled {
+			logger.Info("Initializing OIDC authenticator (hybrid mode)",
+				"issuer_url", cfg.OIDC.IssuerURL,
+				"client_id", cfg.OIDC.ClientID,
+			)
 			oidc, err := auth.NewOIDCAuthenticator(ctx, cfg.OIDC)
 			if err != nil {
 				return nil, fmt.Errorf("failed to create OIDC authenticator: %w", err)
@@ -305,11 +332,29 @@ func buildAuthenticators(ctx context.Context, cfg auth.Config, logger *slog.Logg
 			authenticators = append(authenticators, oidc)
 		}
 		if cfg.SPIFFE.Enabled {
+			logger.Info("Initializing SPIFFE authenticator (hybrid mode)",
+				"trust_domain", cfg.SPIFFE.TrustDomain,
+				"server_id", cfg.SPIFFE.ServerID,
+				"endpoint_socket", cfg.SPIFFE.EndpointSocket,
+			)
 			spiffe, err := auth.NewSPIFFEAuthenticator(ctx, cfg.SPIFFE)
 			if err != nil {
 				return nil, fmt.Errorf("failed to create SPIFFE authenticator: %w", err)
 			}
 			authenticators = append(authenticators, spiffe)
+		}
+		if cfg.DaprSentry.Enabled {
+			logger.Info("Initializing Dapr Sentry authenticator (hybrid mode)",
+				"jwks_url", cfg.DaprSentry.JWKSUrl,
+				"trust_domain", cfg.DaprSentry.TrustDomain,
+				"audience", cfg.DaprSentry.Audience,
+				"token_header", cfg.DaprSentry.TokenHeader,
+			)
+			sentry, err := auth.NewDaprSentryAuthenticatorWithLogger(ctx, cfg.DaprSentry, logger)
+			if err != nil {
+				return nil, fmt.Errorf("failed to create Dapr Sentry authenticator: %w", err)
+			}
+			authenticators = append(authenticators, sentry)
 		}
 	}
 

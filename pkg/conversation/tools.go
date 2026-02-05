@@ -24,7 +24,7 @@ type ConverseArgs struct {
 var daprClient dapr.Client
 
 func converseTool(ctx context.Context, req *mcp.CallToolRequest, args ConverseArgs) (*mcp.CallToolResult, any, error) {
-	ctx, span := otel.Tracer("daprmcp").Start(ctx, "converse")
+	ctx, span := otel.Tracer("dapr-mcp-server").Start(ctx, "converse")
 	defer span.End()
 
 	contextID := args.ContextID

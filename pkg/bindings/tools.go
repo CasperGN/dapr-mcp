@@ -13,6 +13,11 @@ import (
 	"go.opentelemetry.io/otel/propagation"
 )
 
+// BindingsClient defines the interface for bindings operations.
+type BindingsClient interface {
+	InvokeBinding(ctx context.Context, in *dapr.InvokeBindingRequest) (*dapr.BindingEvent, error)
+}
+
 type InvokeBindingArgs struct {
 	BindingName string            `json:"bindingName" jsonschema:"The name of the Dapr output binding component (e.g., 'storage-binding')."`
 	Operation   string            `json:"operation" jsonschema:"The operation to perform on the binding (e.g., 'create', 'get', 'delete'). Must be supported by the component."`
@@ -20,10 +25,10 @@ type InvokeBindingArgs struct {
 	Metadata    map[string]string `json:"metadata" jsonschema:"Optional key-value pairs required by the specific binding component for the operation (e.g., 'key' for a storage binding)."`
 }
 
-var daprClient dapr.Client
+var bindingsClient BindingsClient
 
 func invokeOutputBindingTool(ctx context.Context, req *mcp.CallToolRequest, args InvokeBindingArgs) (*mcp.CallToolResult, any, error) {
-	ctx, span := otel.Tracer("daprmcp").Start(ctx, "invoke_binding")
+	ctx, span := otel.Tracer("dapr-mcp-server").Start(ctx, "invoke_binding")
 	defer span.End()
 
 	data := []byte(args.Data)
@@ -47,7 +52,7 @@ func invokeOutputBindingTool(ctx context.Context, req *mcp.CallToolRequest, args
 		Metadata:  metadata,
 	}
 
-	resp, err := daprClient.InvokeBinding(ctx, bindingReq)
+	resp, err := bindingsClient.InvokeBinding(ctx, bindingReq)
 	if err != nil {
 		log.Printf("Dapr InvokeOutputBinding failed for binding %s: %v", args.BindingName, err)
 		toolErrorMessage := fmt.Sprintf("Failed to invoke binding '%s' with operation '%s'. Dapr Error: %v", args.BindingName, args.Operation, err)
@@ -81,8 +86,8 @@ func invokeOutputBindingTool(ctx context.Context, req *mcp.CallToolRequest, args
 	}, structuredResult, nil
 }
 
-func RegisterTools(server *mcp.Server, client dapr.Client) {
-	daprClient = client
+func RegisterTools(server *mcp.Server, client BindingsClient) {
+	bindingsClient = client
 
 	isDestructive := true
 	notReadOnly := false

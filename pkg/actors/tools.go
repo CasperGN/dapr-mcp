@@ -10,6 +10,11 @@ import (
 	"go.opentelemetry.io/otel"
 )
 
+// ActorClient defines the interface for actor operations.
+type ActorClient interface {
+	InvokeActor(ctx context.Context, req *dapr.InvokeActorRequest) (*dapr.InvokeActorResponse, error)
+}
+
 type InvokeActorMethodArgs struct {
 	ActorType string `json:"actorType" jsonschema:"The registered actor type (e.g., 'payment-processor')."`
 	ActorID   string `json:"actorID" jsonschema:"The unique ID of the actor instance (e.g., 'user-1001')."`
@@ -17,10 +22,10 @@ type InvokeActorMethodArgs struct {
 	Data      string `json:"data" jsonschema:"The payload to pass to the actor method (e.g., order details)."`
 }
 
-var daprClient dapr.Client
+var actorClient ActorClient
 
 func invokeActorMethodTool(ctx context.Context, req *mcp.CallToolRequest, args InvokeActorMethodArgs) (*mcp.CallToolResult, any, error) {
-	ctx, span := otel.Tracer("daprmcp").Start(ctx, "invoke_actor")
+	ctx, span := otel.Tracer("dapr-mcp-server").Start(ctx, "invoke_actor")
 	defer span.End()
 
 	actorReq := &dapr.InvokeActorRequest{
@@ -30,7 +35,7 @@ func invokeActorMethodTool(ctx context.Context, req *mcp.CallToolRequest, args I
 		Data:      []byte(args.Data),
 	}
 
-	resp, err := daprClient.InvokeActor(ctx, actorReq)
+	resp, err := actorClient.InvokeActor(ctx, actorReq)
 	if err != nil {
 		log.Printf("Dapr InvokeActor failed: %v", err)
 		toolErrorMessage := fmt.Errorf("dapr InvokeActor failed: %w", err).Error()
@@ -59,8 +64,8 @@ func invokeActorMethodTool(ctx context.Context, req *mcp.CallToolRequest, args I
 	}, structuredResult, nil
 }
 
-func RegisterTools(server *mcp.Server, client dapr.Client) {
-	daprClient = client
+func RegisterTools(server *mcp.Server, client ActorClient) {
+	actorClient = client
 
 	isDestructive := true
 	notReadOnly := false

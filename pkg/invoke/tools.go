@@ -13,6 +13,11 @@ import (
 	"go.opentelemetry.io/otel/propagation"
 )
 
+// InvokeClient defines the interface for service invocation operations.
+type InvokeClient interface {
+	InvokeMethodWithContent(ctx context.Context, appID, methodName, verb string, content *dapr.DataContent) ([]byte, error)
+}
+
 type InvokeServiceArgs struct {
 	AppID    string            `json:"appID" jsonschema:"The Dapr application ID of the service to call (e.g., 'order-processor')."`
 	Method   string            `json:"method" jsonschema:"The method/endpoint on the target service to call (e.g., 'status')."`
@@ -21,10 +26,10 @@ type InvokeServiceArgs struct {
 	Metadata map[string]string `json:"metadata,omitempty" jsonschema:"Optional key-value pairs to send as HTTP headers."`
 }
 
-var daprClient dapr.Client
+var invokeClient InvokeClient
 
 func invokeServiceTool(ctx context.Context, req *mcp.CallToolRequest, args InvokeServiceArgs) (*mcp.CallToolResult, any, error) {
-	ctx, span := otel.Tracer("daprmcp").Start(ctx, "invoke_service")
+	ctx, span := otel.Tracer("dapr-mcp-server").Start(ctx, "invoke_service")
 	defer span.End()
 
 	if args.HTTPVerb == "" {
@@ -44,7 +49,7 @@ func invokeServiceTool(ctx context.Context, req *mcp.CallToolRequest, args Invok
 	propagator := otel.GetTextMapPropagator()
 	propagator.Inject(ctx, propagation.MapCarrier(metadata))
 
-	resp, err := daprClient.InvokeMethodWithContent(ctx, args.AppID, args.Method, args.HTTPVerb, content)
+	resp, err := invokeClient.InvokeMethodWithContent(ctx, args.AppID, args.Method, args.HTTPVerb, content)
 	if err != nil {
 		log.Printf("Dapr InvokeMethod failed for app %s/%s: %v", args.AppID, args.Method, err)
 		toolErrorMessage := fmt.Errorf("failed to invoke service method: %w", err).Error()
@@ -86,8 +91,8 @@ func invokeServiceTool(ctx context.Context, req *mcp.CallToolRequest, args Invok
 	}, structuredResult, nil
 }
 
-func RegisterTools(server *mcp.Server, client dapr.Client) {
-	daprClient = client
+func RegisterTools(server *mcp.Server, client InvokeClient) {
+	invokeClient = client
 
 	isDestructive := true
 	notReadOnly := false
