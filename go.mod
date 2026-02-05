@@ -3,7 +3,7 @@ module github.com/dapr/dapr-mcp-server
 go 1.25.4
 
 require (
-	github.com/coreos/go-oidc/v3 v3.14.1
+	github.com/coreos/go-oidc/v3 v3.17.0
 	github.com/dapr/dapr v1.16.0
 	github.com/dapr/go-sdk v1.13.0
 	github.com/go-jose/go-jose/v4 v4.1.3
@@ -18,7 +18,7 @@ require (
 	go.opentelemetry.io/otel/metric v1.39.0
 	go.opentelemetry.io/otel/sdk v1.39.0
 	go.opentelemetry.io/otel/sdk/metric v1.39.0
-	google.golang.org/grpc v1.77.0
+	google.golang.org/grpc v1.78.0
 	google.golang.org/protobuf v1.36.10
 )
 
