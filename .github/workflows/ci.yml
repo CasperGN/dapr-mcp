@@ -49,24 +49,31 @@ jobs:
 
       - name: Run tests with coverage
         run: |
-          go test -v -race -coverprofile=coverage.out -covermode=atomic ./...
+          go test -v -race -coverprofile=coverage.out -covermode=atomic ./pkg/...
           go tool cover -func=coverage.out
 
       - name: Check coverage threshold
         run: |
           COVERAGE=$(go tool cover -func=coverage.out | grep total | awk '{print substr($3, 1, length($3)-1)}')
           echo "Total coverage: ${COVERAGE}%"
-          # Warn if coverage is below 80% but don't fail yet as we're building up tests
-          if (( $(echo "$COVERAGE < 80" | bc -l) )); then
-            echo "::warning::Coverage is below 80% target: ${COVERAGE}%"
+          THRESHOLD=80
+          if (( $(echo "$COVERAGE < $THRESHOLD" | bc -l) )); then
+            echo "::error::Coverage ${COVERAGE}% is below required threshold of ${THRESHOLD}%"
+            exit 1
           fi
+          echo "Coverage ${COVERAGE}% meets the ${THRESHOLD}% threshold"
+
+      - name: Generate coverage report
+        run: go tool cover -html=coverage.out -o coverage.html
 
       - name: Upload coverage report
         uses: actions/upload-artifact@v6
         with:
           name: coverage-report
-          path: coverage.out
-          retention-days: 7
+          path: |
+            coverage.out
+            coverage.html
+          retention-days: 30
 
   build:
     name: Build

@@ -14,6 +14,22 @@ import (
 	"google.golang.org/protobuf/types/known/anypb"
 )
 
+// ConversationClient defines the interface for conversation operations.
+// This allows for dependency injection and easier testing.
+type ConversationClient interface {
+	ConverseAlpha2(ctx context.Context, req dapr.ConversationRequestAlpha2) (*dapr.ConversationResponseAlpha2, error)
+}
+
+// daprClientAdapter wraps a dapr.Client to implement ConversationClient.
+// This is needed because the Dapr SDK's ConverseAlpha2 uses unexported option types.
+type daprClientAdapter struct {
+	client dapr.Client
+}
+
+func (a *daprClientAdapter) ConverseAlpha2(ctx context.Context, req dapr.ConversationRequestAlpha2) (*dapr.ConversationResponseAlpha2, error) {
+	return a.client.ConverseAlpha2(ctx, req)
+}
+
 type ConverseArgs struct {
 	Name        string  `json:"name" jsonschema:"The Dapr component name of the LLM service (e.g., 'ollama', 'openai')."`
 	Prompt      string  `json:"prompt" jsonschema:"The user's direct question or instruction to the LLM."`
@@ -21,7 +37,7 @@ type ConverseArgs struct {
 	Temperature float64 `json:"temperature,omitempty" jsonschema:"Optional: LLM temperature setting (0.0 to 1.0). Default is 0.7."`
 }
 
-var daprClient dapr.Client
+var daprClient ConversationClient
 
 func converseTool(ctx context.Context, req *mcp.CallToolRequest, args ConverseArgs) (*mcp.CallToolResult, any, error) {
 	ctx, span := otel.Tracer("dapr-mcp-server").Start(ctx, "converse")
@@ -153,7 +169,7 @@ func converseTool(ctx context.Context, req *mcp.CallToolRequest, args ConverseAr
 }
 
 func RegisterTools(server *mcp.Server, client dapr.Client) {
-	daprClient = client
+	daprClient = &daprClientAdapter{client: client}
 
 	isDestructive := false
 	isReadOnly := true

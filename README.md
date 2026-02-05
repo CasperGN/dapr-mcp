@@ -85,7 +85,7 @@ dapr run --app-id dapr-mcp-server --resources-path components -- dapr-mcp-server
 
 | Variable | Description | Default |
 |----------|-------------|---------|
-| `dapr-mcp-server_LOG_LEVEL` | Log level: DEBUG, INFO, WARN, ERROR | `INFO` |
+| `DAPR_MCP_SERVER_LOG_LEVEL` | Log level: DEBUG, INFO, WARN, ERROR | `INFO` |
 
 #### OpenTelemetry Configuration
 
@@ -99,8 +99,8 @@ dapr run --app-id dapr-mcp-server --resources-path components -- dapr-mcp-server
 | `OTEL_EXPORTER_OTLP_HEADERS` | Headers (key=value,key2=value2) | (none) |
 | `OTEL_SERVICE_NAME` | Service name for telemetry | `dapr-mcp-server` |
 | `OTEL_SERVICE_VERSION` | Service version | `v1.0.0` |
-| `dapr-mcp-server_METRICS_ENABLED` | Enable metrics export | `true` |
-| `dapr-mcp-server_LOGS_OTEL_ENABLED` | Export logs via OTEL | `true` |
+| `DAPR_MCP_SERVER_METRICS_ENABLED` | Enable metrics export | `true` |
+| `DAPR_MCP_SERVER_LOGS_OTEL_ENABLED` | Export logs via OTEL | `true` |
 
 #### Authentication Configuration
 

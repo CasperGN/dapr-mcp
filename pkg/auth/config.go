@@ -88,13 +88,33 @@ func DefaultConfig() Config {
 		}
 	}
 
+	// Get base configs
+	oidcConfig := defaultOIDCConfig()
+	spiffeConfig := defaultSPIFFEConfig()
+	daprSentryConfig := defaultDaprSentryConfig()
+
+	// Auto-enable the appropriate config based on AUTH_MODE.
+	// This removes the need for redundant *_ENABLED flags when using single-mode auth.
+	// For ModeHybrid, the individual *_ENABLED flags are still read from env vars.
+	switch mode {
+	case ModeOIDC:
+		oidcConfig.Enabled = true
+	case ModeSPIFFE:
+		spiffeConfig.Enabled = true
+	case ModeDaprSentry:
+		daprSentryConfig.Enabled = true
+	case ModeHybrid:
+		// For hybrid mode, keep the individual *_ENABLED flags from env vars
+		// (already set in the default*Config() functions)
+	}
+
 	return Config{
 		Enabled:    enabled,
 		Mode:       mode,
 		SkipPaths:  skipPaths,
-		OIDC:       defaultOIDCConfig(),
-		SPIFFE:     defaultSPIFFEConfig(),
-		DaprSentry: defaultDaprSentryConfig(),
+		OIDC:       oidcConfig,
+		SPIFFE:     spiffeConfig,
+		DaprSentry: daprSentryConfig,
 	}
 }
 
