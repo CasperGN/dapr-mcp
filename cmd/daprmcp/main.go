@@ -96,8 +96,8 @@ func main() {
 		)
 	} else {
 		defer func() {
-			if err := shutdown(ctx); err != nil {
-				logger.Error("Error shutting down telemetry", "error", err)
+			if shutdownErr := shutdown(ctx); shutdownErr != nil {
+				logger.Error("Error shutting down telemetry", "error", shutdownErr)
 			}
 		}()
 		logger.Info("OpenTelemetry initialized successfully")
@@ -115,8 +115,8 @@ func main() {
 	otel.SetTextMapPropagator(prop)
 
 	// Initialize Dapr client
-	if err := initializeDaprClient(ctx, logger); err != nil {
-		logger.Error("Fatal error: could not initialize Dapr client", "error", err)
+	if initErr := initializeDaprClient(ctx, logger); initErr != nil {
+		logger.Error("Fatal error: could not initialize Dapr client", "error", initErr)
 		os.Exit(1)
 	}
 
